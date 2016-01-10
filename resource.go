@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -50,6 +51,7 @@ type resourceManager struct {
 	files     []string
 	currentSN uint32
 	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
+	mutex     sync.RWMutex
 }
 
 func newResourceManager(files []string) (*resourceManager, error) {
