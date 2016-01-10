@@ -85,14 +85,14 @@ func (rmgr *resourceManager) reload(bcastGroup *bcast.Group) {
 	checkError(err)
 
 	if eql := reflect.DeepEqual(rmgr.table[rmgr.currentSN], rmgr.table[nextSN]); !eql {
-		log.Debugf("VRP has been updated. (SN: %v -> %v)", rmgr.currentSN, nextSN)
+		log.Debugf("The resources have been updated. (SN: %v -> %v)", rmgr.currentSN, nextSN)
 		rmgr.currentSN = nextSN
 		broadcast.Send(rmgr)
 		for k, _ := range rmgr.table {
 			t := time.Now()
 			if int64(k) < t.Add(-1*time.Hour).Unix() {
 				delete(rmgr.table, k)
-				log.Debugf("VRP as of %v was expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
+				log.Debugf("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
 			}
 		}
 	} else {
