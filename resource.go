@@ -103,9 +103,11 @@ func (rmgr *resourceManager) reload(bcastGroup *bcast.Group) {
 func (rmgr *resourceManager) loadFromIRRdb(sn uint32, irrDBFileName string) (*resourceManager, error) {
 	byObjects := regexp.MustCompile("\n\n")
 
-	rmgr.table[sn] = make(map[bgp.RouteFamily]*radix.Tree)
-	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
-		rmgr.table[sn][rf] = radix.New()
+	if _, ok := rmgr.table[sn]; !ok {
+		rmgr.table[sn] = make(map[bgp.RouteFamily]*radix.Tree)
+		for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
+			rmgr.table[sn][rf] = radix.New()
+		}
 	}
 
 	irrDb, err := ioutil.ReadFile(irrDBFileName)
