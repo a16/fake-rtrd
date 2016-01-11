@@ -51,7 +51,7 @@ type resourceManager struct {
 	files     []string
 	currentSN uint32
 	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
-	mutex     sync.RWMutex
+	sync.RWMutex
 }
 
 func newResourceManager(files []string) (*resourceManager, error) {
@@ -69,12 +69,14 @@ func newResourceManager(files []string) (*resourceManager, error) {
 
 func (rmgr *resourceManager) loadAs(sn uint32) (*resourceManager, error) {
 	var err error
+	rmgr.Lock()
 	for _, f := range rmgr.files {
 		rmgr, err = rmgr.loadFromIRRdb(sn, f)
 		if err != nil {
 			return nil, err
 		}
 	}
+	rmgr.Unlock()
 
 	return rmgr, nil
 }
@@ -86,10 +88,11 @@ func (rmgr *resourceManager) reload(bcastGroup *bcast.Group) {
 	rmgr, err := rmgr.loadAs(nextSN)
 	checkError(err)
 
+	rmgr.Lock()
 	if eql := reflect.DeepEqual(rmgr.table[rmgr.currentSN], rmgr.table[nextSN]); !eql {
 		log.Debugf("The resources have been updated. (SN: %v -> %v)", rmgr.currentSN, nextSN)
 		rmgr.currentSN = nextSN
-		broadcast.Send(rmgr)
+		broadcast.Send(true)
 		for k, _ := range rmgr.table {
 			t := time.Now()
 			if int64(k) < t.Add(-1*time.Hour).Unix() {
@@ -100,6 +103,7 @@ func (rmgr *resourceManager) reload(bcastGroup *bcast.Group) {
 	} else {
 		delete(rmgr.table, nextSN)
 	}
+	rmgr.Unlock()
 }
 
 func (rmgr *resourceManager) loadFromIRRdb(sn uint32, irrDBFileName string) (*resourceManager, error) {

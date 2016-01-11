@@ -80,6 +80,8 @@ func (s *rtrServer) run() {
 }
 
 func (rtr *rtrConn) sendDeltaPrefixes(rmgr *resourceManager, peerSN uint32) error {
+	rmgr.RLock()
+	defer rmgr.RUnlock()
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		for _, add := range toBeAdded(rmgr.table[peerSN][rf], rmgr.table[rmgr.currentSN][rf]) {
 			addr, plen, mlen, asn := stringToValues(add)
@@ -100,6 +102,8 @@ func (rtr *rtrConn) sendDeltaPrefixes(rmgr *resourceManager, peerSN uint32) erro
 }
 
 func (rtr *rtrConn) sendAllPrefixes(rmgr *resourceManager) error {
+	rmgr.RLock()
+	defer rmgr.RUnlock()
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		for _, v := range rmgr.table[rmgr.currentSN][rf].ToMap() {
 			for _, w := range v.(*prefixResource).values {
@@ -158,8 +162,7 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 
 	for {
 		select {
-		case data := <-bcastReceiver.In:
-			rmgr = data.(*resourceManager)
+		case <-bcastReceiver.In:
 			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, rmgr.currentSN)); err != nil {
 				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
 			}
@@ -171,9 +174,12 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 		case m := <-msgCh:
 			switch msg := m.(type) {
 			case *bgp.RTRSerialQuery:
+				rmgr.RLock()
 				peerSN := msg.SerialNumber
 				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
-				if _, ok := rmgr.table[peerSN]; ok {
+				_, ok := rmgr.table[peerSN]
+				rmgr.RUnlock()
+				if ok {
 					if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err == nil {
 						log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 						if err := rtr.sendDeltaPrefixes(rmgr, peerSN); err == nil {
