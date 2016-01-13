@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/grafov/bcast"
 	"github.com/osrg/gobgp/packet"
 )
 
@@ -137,8 +136,8 @@ type errMsg struct {
 	data []byte
 }
 
-func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
-	bcastReceiver := bcastGroup.Join()
+func handleRTR(rtr *rtrConn, rmgr *resourceManager) {
+	bcastReceiver := rmgr.group.Join()
 	scanner := bufio.NewScanner(bufio.NewReader(rtr.conn))
 	scanner.Split(bgp.SplitRTR)
 
