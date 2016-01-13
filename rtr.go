@@ -138,15 +138,19 @@ type errMsg struct {
 }
 
 func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
-	defer rtr.conn.Close()
 	bcastReceiver := bcastGroup.Join()
-	defer bcastReceiver.Close()
 	scanner := bufio.NewScanner(bufio.NewReader(rtr.conn))
 	scanner.Split(bgp.SplitRTR)
 
 	msgCh := make(chan bgp.RTRMessage)
 	errCh := make(chan *errMsg)
 	go func() {
+		defer func() {
+			log.Infof("Connection to %v was closed. (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+			bcastReceiver.Close()
+			rtr.conn.Close()
+		}()
+
 		for scanner.Scan() {
 			buf := scanner.Bytes()
 			if buf[0] != rtrProtocolVersion {
@@ -229,5 +233,5 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 SESSION_CLOSE_WITH_INTERNAL_ERROR:
 	rtr.sendPDU(bgp.NewRTRErrorReport(bgp.INTERNAL_ERROR, nil, nil))
 SESSION_CLOSE:
-	log.Infof("Connection to %v was closed. (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+	return
 }
