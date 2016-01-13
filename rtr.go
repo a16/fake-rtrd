@@ -164,17 +164,18 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 		}
 	}()
 
+LOOP:
 	for {
 		select {
 		case <-bcastReceiver.In:
 			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, rmgr.currentSN)); err != nil {
-				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
+				break LOOP
 			}
 			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, rmgr.currentSN)
 		case msg := <-errCh:
 			rtr.sendPDU(bgp.NewRTRErrorReport(msg.code, msg.data, nil))
 			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, msg.code)
-			goto SESSION_CLOSE
+			return
 		case m := <-msgCh:
 			switch msg := m.(type) {
 			case *bgp.RTRSerialQuery:
@@ -200,7 +201,7 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 						continue
 					}
 				}
-				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
+				break LOOP
 			case *bgp.RTRResetQuery:
 				log.Infof("Received Reset Query PDU from %v", rtr.remoteAddr)
 
@@ -208,7 +209,7 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 					log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 					if rmgr == nil {
 						rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil))
-						goto SESSION_CLOSE
+						return
 					} else {
 						if err := rtr.sendAllPrefixes(rmgr); err == nil {
 							if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, rmgr.currentSN)); err == nil {
@@ -218,20 +219,18 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 						}
 					}
 				}
-				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
+				break LOOP
 			case *bgp.RTRErrorReport:
 				log.Warnf("Received Error Report PDU from %v (%#v)", rtr.remoteAddr, msg)
-				goto SESSION_CLOSE
+				return
 			default:
 				pdu, _ := msg.Serialize()
 				log.Warnf("Received unsupported PDU (type %d) from %v (%#v)", pdu[1], rtr.remoteAddr, msg)
 				rtr.sendPDU(bgp.NewRTRErrorReport(bgp.UNSUPPORTED_PDU_TYPE, pdu, nil))
-				goto SESSION_CLOSE
+				return
 			}
 		}
 	}
-SESSION_CLOSE_WITH_INTERNAL_ERROR:
 	rtr.sendPDU(bgp.NewRTRErrorReport(bgp.INTERNAL_ERROR, nil, nil))
-SESSION_CLOSE:
 	return
 }
