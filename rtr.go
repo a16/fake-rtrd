@@ -22,7 +22,6 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/grafov/bcast"
 	"github.com/osrg/gobgp/packet"
 )
 
@@ -80,6 +79,8 @@ func (s *rtrServer) run() {
 }
 
 func (rtr *rtrConn) sendDeltaPrefixes(rmgr *resourceManager, peerSN uint32) error {
+	rmgr.RLock()
+	defer rmgr.RUnlock()
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		for _, add := range toBeAdded(rmgr.table[peerSN][rf], rmgr.table[rmgr.currentSN][rf]) {
 			addr, plen, mlen, asn := stringToValues(add)
@@ -100,6 +101,8 @@ func (rtr *rtrConn) sendDeltaPrefixes(rmgr *resourceManager, peerSN uint32) erro
 }
 
 func (rtr *rtrConn) sendAllPrefixes(rmgr *resourceManager) error {
+	rmgr.RLock()
+	defer rmgr.RUnlock()
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		for _, v := range rmgr.table[rmgr.currentSN][rf].ToMap() {
 			for _, w := range v.(*prefixResource).values {
@@ -133,16 +136,20 @@ type errMsg struct {
 	data []byte
 }
 
-func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
-	defer rtr.conn.Close()
-	bcastReceiver := bcastGroup.Join()
-	defer bcastReceiver.Close()
+func handleRTR(rtr *rtrConn, rmgr *resourceManager) {
+	bcastReceiver := rmgr.group.Join()
 	scanner := bufio.NewScanner(bufio.NewReader(rtr.conn))
 	scanner.Split(bgp.SplitRTR)
 
 	msgCh := make(chan bgp.RTRMessage)
 	errCh := make(chan *errMsg)
 	go func() {
+		defer func() {
+			log.Infof("Connection to %v was closed. (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+			bcastReceiver.Close()
+			rtr.conn.Close()
+		}()
+
 		for scanner.Scan() {
 			buf := scanner.Bytes()
 			if buf[0] != rtrProtocolVersion {
@@ -156,24 +163,27 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 		}
 	}()
 
+LOOP:
 	for {
 		select {
-		case data := <-bcastReceiver.In:
-			rmgr = data.(*resourceManager)
+		case <-bcastReceiver.In:
 			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, rmgr.currentSN)); err != nil {
-				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
+				break LOOP
 			}
 			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, rmgr.currentSN)
 		case msg := <-errCh:
 			rtr.sendPDU(bgp.NewRTRErrorReport(msg.code, msg.data, nil))
 			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, msg.code)
-			goto SESSION_CLOSE
+			return
 		case m := <-msgCh:
 			switch msg := m.(type) {
 			case *bgp.RTRSerialQuery:
+				rmgr.RLock()
 				peerSN := msg.SerialNumber
 				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
-				if _, ok := rmgr.table[peerSN]; ok {
+				_, ok := rmgr.table[peerSN]
+				rmgr.RUnlock()
+				if ok {
 					if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err == nil {
 						log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 						if err := rtr.sendDeltaPrefixes(rmgr, peerSN); err == nil {
@@ -190,7 +200,7 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 						continue
 					}
 				}
-				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
+				break LOOP
 			case *bgp.RTRResetQuery:
 				log.Infof("Received Reset Query PDU from %v", rtr.remoteAddr)
 
@@ -198,7 +208,7 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 					log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 					if rmgr == nil {
 						rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil))
-						goto SESSION_CLOSE
+						return
 					} else {
 						if err := rtr.sendAllPrefixes(rmgr); err == nil {
 							if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, rmgr.currentSN)); err == nil {
@@ -208,20 +218,18 @@ func handleRTR(rtr *rtrConn, rmgr *resourceManager, bcastGroup *bcast.Group) {
 						}
 					}
 				}
-				goto SESSION_CLOSE_WITH_INTERNAL_ERROR
+				break LOOP
 			case *bgp.RTRErrorReport:
 				log.Warnf("Received Error Report PDU from %v (%#v)", rtr.remoteAddr, msg)
-				goto SESSION_CLOSE
+				return
 			default:
 				pdu, _ := msg.Serialize()
 				log.Warnf("Received unsupported PDU (type %d) from %v (%#v)", pdu[1], rtr.remoteAddr, msg)
 				rtr.sendPDU(bgp.NewRTRErrorReport(bgp.UNSUPPORTED_PDU_TYPE, pdu, nil))
-				goto SESSION_CLOSE
+				return
 			}
 		}
 	}
-SESSION_CLOSE_WITH_INTERNAL_ERROR:
 	rtr.sendPDU(bgp.NewRTRErrorReport(bgp.INTERNAL_ERROR, nil, nil))
-SESSION_CLOSE:
-	log.Infof("Connection to %v was closed. (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+	return
 }

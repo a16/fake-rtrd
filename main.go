@@ -23,7 +23,6 @@ import (
 	"syscall"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/grafov/bcast"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -34,7 +33,7 @@ func checkError(err error) {
 	}
 }
 
-func run(port int, interval int, rmgr *resourceManager, rmgrGroup *bcast.Group) {
+func run(port int, interval int, rmgr *resourceManager) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
@@ -52,16 +51,16 @@ func run(port int, interval int, rmgr *resourceManager, rmgrGroup *bcast.Group) 
 		select {
 		case conn := <-rtrServer.connCh:
 			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
-			go handleRTR(conn, rmgr, rmgrGroup)
+			go handleRTR(conn, rmgr)
 		case <-alarmCh:
 			log.Infof("Alarm triggered")
-			rmgr.reload(rmgrGroup)
+			rmgr.reload()
 		case sig := <-sigCh:
 			{
 				switch sig {
 				case syscall.SIGHUP:
 					log.Infof("SIGHUP received")
-					rmgr.reload(rmgrGroup)
+					rmgr.reload()
 				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
 					return
 				}
@@ -106,10 +105,6 @@ func main() {
 	rmgr, err := newResourceManager(args)
 	checkError(err)
 
-	// Prepare channels for broadcasting updated pseudo ROA
-	rmgrGroup := bcast.NewGroup()
-	go rmgrGroup.Broadcasting(0)
-
-	run(commandOpts.Port, interval, rmgr, rmgrGroup)
+	run(commandOpts.Port, interval, rmgr)
 	log.Infof("Daemon stopped")
 }

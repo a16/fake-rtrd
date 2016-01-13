@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -50,6 +51,8 @@ type resourceManager struct {
 	files     []string
 	currentSN uint32
 	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
+	sync.RWMutex
+	group *bcast.Group
 }
 
 func newResourceManager(files []string) (*resourceManager, error) {
@@ -58,6 +61,8 @@ func newResourceManager(files []string) (*resourceManager, error) {
 		table: make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
 	}
 
+	rmgr.group = bcast.NewGroup()
+	go rmgr.group.Broadcasting(0)
 	rmgr.currentSN = uint32(time.Now().Unix())
 	rmgr, err := rmgr.loadAs(rmgr.currentSN)
 	log.Debugf("The resources have been loaded. (SN: %v)", rmgr.currentSN)
@@ -67,37 +72,41 @@ func newResourceManager(files []string) (*resourceManager, error) {
 
 func (rmgr *resourceManager) loadAs(sn uint32) (*resourceManager, error) {
 	var err error
+	rmgr.Lock()
 	for _, f := range rmgr.files {
 		rmgr, err = rmgr.loadFromIRRdb(sn, f)
 		if err != nil {
 			return nil, err
 		}
 	}
+	rmgr.Unlock()
 
 	return rmgr, nil
 }
 
-func (rmgr *resourceManager) reload(bcastGroup *bcast.Group) {
-	broadcast := bcastGroup.Join()
+func (rmgr *resourceManager) reload() {
+	broadcast := rmgr.group.Join()
 	defer broadcast.Close()
 	nextSN := uint32(time.Now().Unix())
 	rmgr, err := rmgr.loadAs(nextSN)
 	checkError(err)
 
+	rmgr.Lock()
 	if eql := reflect.DeepEqual(rmgr.table[rmgr.currentSN], rmgr.table[nextSN]); !eql {
-		log.Debugf("VRP has been updated. (SN: %v -> %v)", rmgr.currentSN, nextSN)
+		log.Debugf("The resources have been updated. (SN: %v -> %v)", rmgr.currentSN, nextSN)
 		rmgr.currentSN = nextSN
-		broadcast.Send(rmgr)
+		rmgr.group.Send(true)
 		for k, _ := range rmgr.table {
 			t := time.Now()
 			if int64(k) < t.Add(-1*time.Hour).Unix() {
 				delete(rmgr.table, k)
-				log.Debugf("VRP as of %v was expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
+				log.Debugf("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
 			}
 		}
 	} else {
 		delete(rmgr.table, nextSN)
 	}
+	rmgr.Unlock()
 }
 
 func (rmgr *resourceManager) loadFromIRRdb(sn uint32, irrDBFileName string) (*resourceManager, error) {
