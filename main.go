@@ -26,6 +26,12 @@ import (
 	"github.com/jessevdk/go-flags"
 )
 
+var commandOpts struct {
+	Debug    bool `short:"d" long:"debug" default:"false" description:"Show verbose debug information"`
+	Interval int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
+	Port     int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
+}
+
 func checkError(err error) {
 	if err != nil {
 		defer log.Infof("Daemon stopped")
@@ -73,11 +79,6 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Parse options
-	var commandOpts struct {
-		Debug    bool `short:"d" long:"debug" default:"false" description:"Show verbose debug information"`
-		Interval int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
-		Port     int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
-	}
 	parser := flags.NewParser(&commandOpts, flags.Default)
 	parser.Usage = "[OPTIONS] [RPSLFILES]..."
 	args, err := parser.Parse()
