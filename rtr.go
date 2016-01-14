@@ -164,10 +164,12 @@ LOOP:
 		select {
 		case updatedResource := <-bcastReceiver.In:
 			rsrc = updatedResource.(*resource)
-			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, rsrc.currentSN)); err != nil {
-				break LOOP
+			if rsrc.serialNotify {
+				if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, rsrc.currentSN)); err != nil {
+					break LOOP
+				}
+				log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, rsrc.currentSN)
 			}
-			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, rsrc.currentSN)
 		case msg := <-errCh:
 			rtr.sendPDU(bgp.NewRTRErrorReport(msg.code, msg.data, nil))
 			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, msg.code)

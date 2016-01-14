@@ -47,16 +47,18 @@ type prefixResource struct {
 }
 
 type resource struct {
-	files     []string
-	currentSN uint32
-	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
-	group     *bcast.Group
+	files        []string
+	currentSN    uint32
+	table        map[uint32]map[bgp.RouteFamily]*radix.Tree
+	group        *bcast.Group
+	serialNotify bool
 }
 
 func newResource(files []string) (*resource, error) {
 	rsrc := &resource{
-		files: files,
-		table: make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
+		files:        files,
+		table:        make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
+		serialNotify: false,
 	}
 
 	rsrc.group = bcast.NewGroup()
@@ -81,6 +83,7 @@ func (rsrc *resource) loadAs(sn uint32) (*resource, error) {
 }
 
 func (rsrc *resource) reload() {
+	rsrc.serialNotify = false
 	broadcast := rsrc.group.Join()
 	defer broadcast.Close()
 	nextSN := uint32(time.Now().Unix())
@@ -88,19 +91,24 @@ func (rsrc *resource) reload() {
 	checkError(err)
 
 	if eql := reflect.DeepEqual(rsrc.table[rsrc.currentSN], rsrc.table[nextSN]); !eql {
+		rsrc.serialNotify = true
 		log.Debugf("The resources have been updated. (SN: %v -> %v)", rsrc.currentSN, nextSN)
 		rsrc.currentSN = nextSN
-		rsrc.group.Send(rsrc)
-		for k, _ := range rsrc.table {
+	} else {
+		delete(rsrc.table, nextSN)
+	}
+
+	for k, _ := range rsrc.table {
+		if rsrc.currentSN != k {
 			t := time.Now()
 			if int64(k) < t.Add(-1*time.Hour).Unix() {
 				delete(rsrc.table, k)
 				log.Debugf("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
 			}
 		}
-	} else {
-		delete(rsrc.table, nextSN)
 	}
+
+	rsrc.group.Send(rsrc)
 }
 
 func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource, error) {
