@@ -79,36 +79,54 @@ func (s *rtrServer) run() {
 }
 
 func (rtr *rtrConn) sendDeltaPrefixes(rsrc *resource, peerSN uint32) error {
+	var counter uint32
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
+		counter = 0
 		for _, add := range toBeAdded(rsrc.table[peerSN][rf], rsrc.table[rsrc.currentSN][rf]) {
 			addr, plen, mlen, asn := stringToValues(add)
 			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(addr, plen, mlen, asn, bgp.ANNOUNCEMENT)); err != nil {
 				return err
 			}
+			counter++
 			log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, addr, plen, mlen, asn)
 		}
+		if counter != 0 {
+			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), counter, rtr.remoteAddr)
+		}
+
+		counter = 0
 		for _, del := range toBeDeleted(rsrc.table[peerSN][rf], rsrc.table[rsrc.currentSN][rf]) {
 			addr, plen, mlen, asn := stringToValues(del)
 			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(addr, plen, mlen, asn, bgp.WITHDRAWAL)); err != nil {
 				return err
 			}
+			counter++
 			log.Debugf("Sent %s PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: WITHDRAW)", RFToIPVer(rf), rtr.remoteAddr, addr, plen, mlen, asn)
+		}
+		if counter != 0 {
+			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: WITHDRAW)", RFToIPVer(rf), counter, rtr.remoteAddr)
 		}
 	}
 	return nil
 }
 
 func (rtr *rtrConn) sendAllPrefixes(rsrc *resource) error {
+	var counter uint32
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
+		counter = 0
 		for _, v := range rsrc.table[rsrc.currentSN][rf].ToMap() {
 			for _, w := range v.(*prefixResource).values {
 				for _, x := range w.asns {
 					if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.(*prefixResource).prefix, v.(*prefixResource).prefixLen, w.maxLen, x, bgp.ANNOUNCEMENT)); err != nil {
 						return err
 					}
+					counter++
 					log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, v.(*prefixResource).prefix, v.(*prefixResource).prefixLen, w.maxLen, x)
 				}
 			}
+		}
+		if counter != 0 {
+			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), counter, rtr.remoteAddr)
 		}
 	}
 	return nil
