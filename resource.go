@@ -65,7 +65,7 @@ func newResource(files []string) (*resource, error) {
 	go rsrc.group.Broadcasting(0)
 	rsrc.currentSN = uint32(time.Now().Unix())
 	rsrc, err := rsrc.loadAs(rsrc.currentSN)
-	log.Debugf("The resources have been loaded. (SN: %v)", rsrc.currentSN)
+	log.Infof("The resources have been loaded. (SN: %v)", rsrc.currentSN)
 	checkError(err)
 	return rsrc, nil
 }
@@ -92,7 +92,7 @@ func (rsrc *resource) reload() {
 
 	if eql := reflect.DeepEqual(rsrc.table[rsrc.currentSN], rsrc.table[nextSN]); !eql {
 		rsrc.serialNotify = true
-		log.Debugf("The resources have been updated. (SN: %v -> %v)", rsrc.currentSN, nextSN)
+		log.Infof("The resources have been updated. (SN: %v -> %v)", rsrc.currentSN, nextSN)
 		rsrc.currentSN = nextSN
 	} else {
 		delete(rsrc.table, nextSN)
@@ -103,7 +103,7 @@ func (rsrc *resource) reload() {
 			t := time.Now()
 			if int64(k) < t.Add(-1*time.Hour).Unix() {
 				delete(rsrc.table, k)
-				log.Debugf("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
+				log.Infof("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
 			}
 		}
 	}
