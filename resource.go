@@ -46,70 +46,70 @@ type prefixResource struct {
 	values    []*subResource
 }
 
-type resourceManager struct {
+type resource struct {
 	files     []string
 	currentSN uint32
 	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
 	group     *bcast.Group
 }
 
-func newResourceManager(files []string) (*resourceManager, error) {
-	rmgr := &resourceManager{
+func newResource(files []string) (*resource, error) {
+	rsrc := &resource{
 		files: files,
 		table: make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
 	}
 
-	rmgr.group = bcast.NewGroup()
-	go rmgr.group.Broadcasting(0)
-	rmgr.currentSN = uint32(time.Now().Unix())
-	rmgr, err := rmgr.loadAs(rmgr.currentSN)
-	log.Debugf("The resources have been loaded. (SN: %v)", rmgr.currentSN)
+	rsrc.group = bcast.NewGroup()
+	go rsrc.group.Broadcasting(0)
+	rsrc.currentSN = uint32(time.Now().Unix())
+	rsrc, err := rsrc.loadAs(rsrc.currentSN)
+	log.Debugf("The resources have been loaded. (SN: %v)", rsrc.currentSN)
 	checkError(err)
-	return rmgr, nil
+	return rsrc, nil
 }
 
-func (rmgr *resourceManager) loadAs(sn uint32) (*resourceManager, error) {
+func (rsrc *resource) loadAs(sn uint32) (*resource, error) {
 	var err error
-	for _, f := range rmgr.files {
-		rmgr, err = rmgr.loadFromIRRdb(sn, f)
+	for _, f := range rsrc.files {
+		rsrc, err = rsrc.loadFromIRRdb(sn, f)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return rmgr, nil
+	return rsrc, nil
 }
 
-func (rmgr *resourceManager) reload() {
-	broadcast := rmgr.group.Join()
+func (rsrc *resource) reload() {
+	broadcast := rsrc.group.Join()
 	defer broadcast.Close()
 	nextSN := uint32(time.Now().Unix())
-	rmgr, err := rmgr.loadAs(nextSN)
+	rsrc, err := rsrc.loadAs(nextSN)
 	checkError(err)
 
-	if eql := reflect.DeepEqual(rmgr.table[rmgr.currentSN], rmgr.table[nextSN]); !eql {
-		log.Debugf("The resources have been updated. (SN: %v -> %v)", rmgr.currentSN, nextSN)
-		rmgr.currentSN = nextSN
-		rmgr.group.Send(rmgr)
-		for k, _ := range rmgr.table {
+	if eql := reflect.DeepEqual(rsrc.table[rsrc.currentSN], rsrc.table[nextSN]); !eql {
+		log.Debugf("The resources have been updated. (SN: %v -> %v)", rsrc.currentSN, nextSN)
+		rsrc.currentSN = nextSN
+		rsrc.group.Send(rsrc)
+		for k, _ := range rsrc.table {
 			t := time.Now()
 			if int64(k) < t.Add(-1*time.Hour).Unix() {
-				delete(rmgr.table, k)
+				delete(rsrc.table, k)
 				log.Debugf("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
 			}
 		}
 	} else {
-		delete(rmgr.table, nextSN)
+		delete(rsrc.table, nextSN)
 	}
 }
 
-func (rmgr *resourceManager) loadFromIRRdb(sn uint32, irrDBFileName string) (*resourceManager, error) {
+func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource, error) {
 	byObjects := regexp.MustCompile("\n\n")
 
-	if _, ok := rmgr.table[sn]; !ok {
-		rmgr.table[sn] = make(map[bgp.RouteFamily]*radix.Tree)
+	if _, ok := rsrc.table[sn]; !ok {
+		rsrc.table[sn] = make(map[bgp.RouteFamily]*radix.Tree)
 		for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
-			rmgr.table[sn][rf] = radix.New()
+			rsrc.table[sn][rf] = radix.New()
 		}
 	}
 
@@ -131,14 +131,14 @@ func (rmgr *resourceManager) loadFromIRRdb(sn uint32, irrDBFileName string) (*re
 		}
 		switch object.Class {
 		case "route":
-			rmgr, err = rmgr.addValidInfo(
+			rsrc, err = rsrc.addValidInfo(
 				sn,
 				object.Get("origin"),
 				object.Get("route"),
 				uint8(net.IPv4len*8),
 			)
 		case "route6":
-			rmgr, err = rmgr.addValidInfo(
+			rsrc, err = rsrc.addValidInfo(
 				sn,
 				object.Get("origin"),
 				object.Get("route6"),
@@ -149,10 +149,10 @@ func (rmgr *resourceManager) loadFromIRRdb(sn uint32, irrDBFileName string) (*re
 			return nil, err
 		}
 	}
-	return rmgr, nil
+	return rsrc, nil
 }
 
-func (rmgr *resourceManager) addValidInfo(sn uint32, as string, prefix string, maxLen uint8) (*resourceManager, error) {
+func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, maxLen uint8) (*resource, error) {
 	a, _ := strconv.ParseUint(strings.TrimLeft(as, "AS"), 10, 32)
 	rf, n, maxLen, err := parseCIDR(prefix)
 	if err != nil {
@@ -179,7 +179,7 @@ func (rmgr *resourceManager) addValidInfo(sn uint32, as string, prefix string, m
 		}(buf1)
 	}()
 
-	b, _ := rmgr.table[sn][rf].Get(key)
+	b, _ := rsrc.table[sn][rf].Get(key)
 	if b == nil {
 		p := make([]byte, len(addr))
 		copy(p, addr)
@@ -195,18 +195,18 @@ func (rmgr *resourceManager) addValidInfo(sn uint32, as string, prefix string, m
 			values:    []*subResource{r},
 		}
 
-		rmgr.table[sn][rf].Insert(key, b)
+		rsrc.table[sn][rf].Insert(key, b)
 	} else {
 		bucket := b.(*prefixResource)
 		for _, r := range bucket.values {
 			if r.maxLen == maxLen {
 				for _, asn := range r.asns {
 					if asn == uint32(a) {
-						return rmgr, nil
+						return rsrc, nil
 					}
 				}
 				r.asns = append(r.asns, uint32(a))
-				return rmgr, nil
+				return rsrc, nil
 			}
 		}
 		r := &subResource{
@@ -215,7 +215,7 @@ func (rmgr *resourceManager) addValidInfo(sn uint32, as string, prefix string, m
 		}
 		bucket.values = append(bucket.values, r)
 	}
-	return rmgr, nil
+	return rsrc, nil
 }
 
 // Wrapper for net.ParseCIDR

@@ -33,7 +33,7 @@ func checkError(err error) {
 	}
 }
 
-func run(port int, interval int, rmgr *resourceManager) {
+func run(port int, interval int, rsrc *resource) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
@@ -51,16 +51,16 @@ func run(port int, interval int, rmgr *resourceManager) {
 		select {
 		case conn := <-rtrServer.connCh:
 			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
-			go handleRTR(conn, rmgr)
+			go handleRTR(conn, rsrc)
 		case <-alarmCh:
 			log.Infof("Alarm triggered")
-			rmgr.reload()
+			rsrc.reload()
 		case sig := <-sigCh:
 			{
 				switch sig {
 				case syscall.SIGHUP:
 					log.Infof("SIGHUP received")
-					rmgr.reload()
+					rsrc.reload()
 				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
 					return
 				}
@@ -102,9 +102,9 @@ func main() {
 	}
 
 	// Load IRR data
-	rmgr, err := newResourceManager(args)
+	rsrc, err := newResource(args)
 	checkError(err)
 
-	run(commandOpts.Port, interval, rmgr)
+	run(commandOpts.Port, interval, rsrc)
 	log.Infof("Daemon stopped")
 }
