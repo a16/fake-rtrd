@@ -91,7 +91,7 @@ func (rtr *rtrConn) sendDeltaPrefixes(rsrc *resource, peerSN uint32) error {
 			log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, addr, plen, mlen, asn)
 		}
 		if !commandOpts.Debug && counter != 0 {
-			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), counter, rtr.remoteAddr)
+			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, counter)
 		}
 
 		counter = 0
@@ -104,7 +104,7 @@ func (rtr *rtrConn) sendDeltaPrefixes(rsrc *resource, peerSN uint32) error {
 			log.Debugf("Sent %s PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: WITHDRAW)", RFToIPVer(rf), rtr.remoteAddr, addr, plen, mlen, asn)
 		}
 		if !commandOpts.Debug && counter != 0 {
-			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: WITHDRAW)", RFToIPVer(rf), counter, rtr.remoteAddr)
+			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: WITHDRAW)", RFToIPVer(rf), rtr.remoteAddr, counter)
 		}
 	}
 	return nil
@@ -126,7 +126,7 @@ func (rtr *rtrConn) sendAllPrefixes(rsrc *resource) error {
 			}
 		}
 		if !commandOpts.Debug && counter != 0 {
-			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), counter, rtr.remoteAddr)
+			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, counter)
 		}
 	}
 	return nil
