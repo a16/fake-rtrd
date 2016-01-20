@@ -101,7 +101,7 @@ func (rsrc *resource) reload() {
 	for k, _ := range rsrc.table {
 		if rsrc.currentSN != k {
 			t := time.Now()
-			if int64(k) < t.Add(-1*time.Hour).Unix() {
+			if int64(k) < t.Add(-24*time.Hour).Unix() {
 				delete(rsrc.table, k)
 				log.Infof("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
 			}
