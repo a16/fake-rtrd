@@ -26,6 +26,12 @@ import (
 	"github.com/jessevdk/go-flags"
 )
 
+var commandOpts struct {
+	Debug    bool `short:"d" long:"debug" default:"false" description:"Show verbose debug information"`
+	Interval int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
+	Port     int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
+}
+
 func checkError(err error) {
 	if err != nil {
 		defer log.Infof("Daemon stopped")
@@ -33,7 +39,7 @@ func checkError(err error) {
 	}
 }
 
-func run(port int, interval int, rmgr *resourceManager) {
+func run(port int, interval int, rsrc *resource) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
@@ -51,16 +57,16 @@ func run(port int, interval int, rmgr *resourceManager) {
 		select {
 		case conn := <-rtrServer.connCh:
 			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
-			go handleRTR(conn, rmgr)
+			go handleRTR(conn, rsrc)
 		case <-alarmCh:
 			log.Infof("Alarm triggered")
-			rmgr.reload()
+			rsrc.reload()
 		case sig := <-sigCh:
 			{
 				switch sig {
 				case syscall.SIGHUP:
 					log.Infof("SIGHUP received")
-					rmgr.reload()
+					rsrc.reload()
 				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
 					return
 				}
@@ -73,11 +79,6 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Parse options
-	var commandOpts struct {
-		Debug    bool `short:"d" long:"debug" default:"false" description:"Show verbose debug information"`
-		Interval int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
-		Port     int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
-	}
 	parser := flags.NewParser(&commandOpts, flags.Default)
 	parser.Usage = "[OPTIONS] [RPSLFILES]..."
 	args, err := parser.Parse()
@@ -102,9 +103,9 @@ func main() {
 	}
 
 	// Load IRR data
-	rmgr, err := newResourceManager(args)
+	rsrc, err := newResource(args)
 	checkError(err)
 
-	run(commandOpts.Port, interval, rmgr)
+	run(commandOpts.Port, interval, rsrc)
 	log.Infof("Daemon stopped")
 }
