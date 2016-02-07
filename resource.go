@@ -21,17 +21,13 @@ import (
 	"io"
 	"io/ioutil"
 	"net"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/a16/go-rpsl"
 	"github.com/armon/go-radix"
-	set "github.com/deckarep/golang-set"
-	"github.com/grafov/bcast"
-	"github.com/martinolsen/go-rpsl"
 	"github.com/osrg/gobgp/packet"
 )
 
@@ -47,26 +43,22 @@ type prefixResource struct {
 }
 
 type resource struct {
-	files        []string
-	currentSN    uint32
-	table        map[uint32]map[bgp.RouteFamily]*radix.Tree
-	group        *bcast.Group
-	serialNotify bool
+	files     []string
+	currentSN uint32
+	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
 }
 
 func newResource(files []string) (*resource, error) {
 	rsrc := &resource{
-		files:        files,
-		table:        make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
-		serialNotify: false,
+		files: files,
+		table: make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
 	}
 
-	rsrc.group = bcast.NewGroup()
-	go rsrc.group.Broadcasting(0)
 	rsrc.currentSN = uint32(time.Now().Unix())
 	rsrc, err := rsrc.loadAs(rsrc.currentSN)
-	log.Infof("The resources have been loaded. (SN: %v)", rsrc.currentSN)
-	checkError(err)
+	if err != nil {
+		return nil, err
+	}
 	return rsrc, nil
 }
 
@@ -80,35 +72,6 @@ func (rsrc *resource) loadAs(sn uint32) (*resource, error) {
 	}
 
 	return rsrc, nil
-}
-
-func (rsrc *resource) reload() {
-	rsrc.serialNotify = false
-	broadcast := rsrc.group.Join()
-	defer broadcast.Close()
-	nextSN := uint32(time.Now().Unix())
-	rsrc, err := rsrc.loadAs(nextSN)
-	checkError(err)
-
-	if eql := reflect.DeepEqual(rsrc.table[rsrc.currentSN], rsrc.table[nextSN]); !eql {
-		rsrc.serialNotify = true
-		log.Infof("The resources have been updated. (SN: %v -> %v)", rsrc.currentSN, nextSN)
-		rsrc.currentSN = nextSN
-	} else {
-		delete(rsrc.table, nextSN)
-	}
-
-	for k, _ := range rsrc.table {
-		if rsrc.currentSN != k {
-			t := time.Now()
-			if int64(k) < t.Add(-24*time.Hour).Unix() {
-				delete(rsrc.table, k)
-				log.Infof("The resources as of %v were expired. (SN: %v)", time.Unix(int64(k), 0).Format("2006/01/02 15:04:05"), k)
-			}
-		}
-	}
-
-	rsrc.group.Send(rsrc)
 }
 
 func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource, error) {
@@ -243,41 +206,4 @@ func parseCIDR(s string) (bgp.RouteFamily, *net.IPNet, uint8, error) {
 		}
 	}
 	return rf, n, maxLen, nil
-}
-
-func treeToSet(table *radix.Tree) set.Set {
-	i := 0
-	tableMap := make([]*prefixResource, table.Len())
-	table.Walk(func(s string, v interface{}) bool {
-		ct, _ := v.(*prefixResource)
-		tableMap[i] = ct
-		i++
-		return false
-	})
-	result := set.NewSet()
-	for _, x := range tableMap {
-		for _, y := range x.values {
-			for _, z := range y.asns {
-				result.Add(fmt.Sprintf(fmt.Sprintf("%v/%v-%v-%d", x.prefix, x.prefixLen, y.maxLen, z)))
-
-			}
-		}
-	}
-	return result
-}
-
-func toBeAdded(older *radix.Tree, newer *radix.Tree) []string {
-	result := make([]string, 0)
-	for _, add := range treeToSet(newer).Difference(treeToSet(older)).ToSlice() {
-		result = append(result, add.(string))
-	}
-	return result
-}
-
-func toBeDeleted(older *radix.Tree, newer *radix.Tree) []string {
-	result := make([]string, 0)
-	for _, del := range treeToSet(older).Difference(treeToSet(newer)).ToSlice() {
-		result = append(result, del.(string))
-	}
-	return result
 }
