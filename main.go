@@ -23,6 +23,7 @@ import (
 	"syscall"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/grafov/bcast"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -39,7 +40,7 @@ func checkError(err error) {
 	}
 }
 
-func run(port int, interval int, rMap *ResourceMap) {
+func run(port int, interval int, r *ResourceManager) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
@@ -57,17 +58,17 @@ func run(port int, interval int, rMap *ResourceMap) {
 		select {
 		case conn := <-rtrServer.connCh:
 			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
-			go handleRTR(conn, rMap)
+			go handleRTR(conn, r)
 		case <-alarmCh:
 			log.Infof("Alarm triggered")
-			_, err := rMap.Reload()
+			_, err := r.Reload()
 			checkError(err)
 		case sig := <-sigCh:
 			{
 				switch sig {
 				case syscall.SIGHUP:
 					log.Infof("SIGHUP received")
-					_, err := rMap.Reload()
+					_, err := r.Reload()
 					checkError(err)
 				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
 					return
@@ -105,9 +106,12 @@ func main() {
 	}
 
 	// Load IRR data
-	var rMap ResourceMap
-	rMap.Load(args)
+	r := &ResourceManager{
+		ch:           make(chan Request),
+		serialNotify: bcast.NewGroup(),
+	}
+	r.Load(args)
 
-	run(commandOpts.Port, interval, &rMap)
+	run(commandOpts.Port, interval, r)
 	log.Infof("Daemon stopped")
 }

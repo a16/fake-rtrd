@@ -28,7 +28,6 @@ import (
 
 	"github.com/a16/go-rpsl"
 	"github.com/armon/go-radix"
-	set "github.com/deckarep/golang-set"
 	"github.com/osrg/gobgp/packet"
 )
 
@@ -207,31 +206,4 @@ func parseCIDR(s string) (bgp.RouteFamily, *net.IPNet, uint8, error) {
 		}
 	}
 	return rf, n, maxLen, nil
-}
-
-func treeToSet(table *radix.Tree) set.Set {
-	i := 0
-	tableMap := make([]*prefixResource, table.Len())
-	table.Walk(func(s string, v interface{}) bool {
-		ct, _ := v.(*prefixResource)
-		tableMap[i] = ct
-		i++
-		return false
-	})
-	result := set.NewSet()
-	for _, x := range tableMap {
-		for _, y := range x.values {
-			for _, z := range y.asns {
-				fROA := &FakeROA{
-					Prefix:    x.prefix,
-					PrefixLen: x.prefixLen,
-					MaxLen:    y.maxLen,
-					AS:        z,
-				}
-				result.Add(fROA)
-
-			}
-		}
-	}
-	return result
 }
