@@ -162,7 +162,7 @@ func handleRequests(r *ResourceManager, rsrc *resource) {
 			nextSN := uint32(time.Now().Unix())
 			rsrc, err = rsrc.loadAs(nextSN)
 			if err != nil {
-				req.Response <- &Response{Data: nil, Error: err}
+				req.Response <- &Response{Error: err}
 				break
 			}
 
