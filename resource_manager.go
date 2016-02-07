@@ -89,11 +89,11 @@ func (r *ResourceManager) Load(files []string) error {
 	return res.Error
 }
 
-func (r *ResourceManager) Reload() (uint32, error) {
+func (r *ResourceManager) Reload() error {
 	result := make(chan *Response)
 	r.ch <- Request{RequestType: REQ_RELOAD, Response: result}
 	res := <-result
-	return res.Data.(uint32), res.Error
+	return res.Error
 }
 
 func (r *ResourceManager) CurrentSerial() uint32 {
@@ -186,7 +186,7 @@ func handleRequests(r *ResourceManager, rsrc *resource) {
 			if serialNotify {
 				r.serialNotify.Send(true)
 			}
-			req.Response <- &Response{Data: rsrc.currentSN, Error: nil}
+			req.Response <- &Response{Error: nil}
 		case REQ_CURRENT_LIST:
 			keys := req.Key.(reqKeys)
 			req.Response <- &Response{Data: fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][keys.RF]))}
