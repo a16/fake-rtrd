@@ -235,7 +235,7 @@ func treeToSet(table *radix.Tree) set.Set {
 	for _, x := range tableMap {
 		for _, y := range x.values {
 			for _, z := range y.asns {
-				result.Add(fmt.Sprintf(fmt.Sprintf("%v/%v-%v-%d", x.prefix, x.prefixLen, y.maxLen, z)))
+				result.Add(fmt.Sprintf("%v/%v-%v-%d", x.prefix, x.prefixLen, y.maxLen, z))
 			}
 		}
 	}
