@@ -77,6 +77,13 @@ type ResourceManager struct {
 	init         sync.Once
 }
 
+func NewResourceManager() *ResourceManager {
+	return &ResourceManager{
+		ch:           make(chan Request),
+		serialNotify: bcast.NewGroup(),
+	}
+}
+
 func (r *ResourceManager) Load(files []string) error {
 	r.init.Do(func() {
 		go r.serialNotify.Broadcasting(0)

@@ -23,7 +23,6 @@ import (
 	"syscall"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/grafov/bcast"
 	"github.com/jessevdk/go-flags"
 )
 
@@ -70,10 +69,7 @@ func main() {
 	}
 
 	// Load IRR data
-	r := &ResourceManager{
-		ch:           make(chan Request),
-		serialNotify: bcast.NewGroup(),
-	}
+	r := NewResourceManager()
 	err = r.Load(args)
 	checkError(err)
 
