@@ -125,6 +125,48 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 	return nil
 }
 
+func (rtr *rtrConn) startOrRestart(r *ResourceManager) error {
+	t := r.BeginTransaction()
+	defer t.EndTransaction()
+	if err := rtr.sendAllPrefixes(t); err == nil {
+		if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
+			log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+			return nil
+		}
+	}
+	return err
+}
+
+func (rtr *rtrConn) typicalExchange(r *ResourceManager, peerSN uint32) error {
+	t := r.BeginTransaction()
+	defer t.EndTransaction()
+	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err == nil {
+		log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+		if err := rtr.sendDeltaPrefixes(t, peerSN); err == nil {
+			if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
+				log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+				return nil
+			}
+		}
+	}
+	return err
+}
+
+func (rtr *rtrConn) noIncrementalUpdateAvailable() error {
+	if err := rtr.sendPDU(bgp.NewRTRCacheReset()); err == nil {
+		log.Infof("Sent Cache Reset PDU to %v", rtr.remoteAddr)
+		return nil
+	}
+	return err
+}
+
+func (rtr *rtrConn) cacheHasNoDataAvailable() error {
+	if err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil)); err == nil {
+		return nil
+	}
+	return err
+}
+
 func RFToIPVer(rf bgp.RouteFamily) string {
 	return strings.Split(rf.String(), "_")[1]
 }
@@ -179,47 +221,24 @@ LOOP:
 			case *bgp.RTRSerialQuery:
 				peerSN := msg.SerialNumber
 				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
-				t := r.BeginTransaction()
 				if t.HasKey(peerSN) {
-					if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err == nil {
-						log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-						if err := rtr.sendDeltaPrefixes(t, peerSN); err == nil {
-							if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
-								log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
-								t.EndTransaction()
-								continue
-							}
-						}
-					}
-				} else {
-					if err := rtr.sendPDU(bgp.NewRTRCacheReset()); err == nil {
-						log.Infof("Sent Cache Reset PDU to %v", rtr.remoteAddr)
-						t.EndTransaction()
+					if err := rtr.typicalExchange(r, peerSN); err == nil {
 						continue
 					}
 				}
-				t.EndTransaction()
+				if err := rtr.noIncrementalUpdateAvailable(); err == nil {
+					continue
+				}
 				break LOOP
 			case *bgp.RTRResetQuery:
 				log.Infof("Received Reset Query PDU from %v", rtr.remoteAddr)
-
-				if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err == nil {
-					log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-					t := r.BeginTransaction()
-					if t == nil {
-						rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil))
-						t.EndTransaction()
-						return
-					} else {
-						if err := rtr.sendAllPrefixes(t); err == nil {
-							if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
-								log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
-								t.EndTransaction()
-								continue
-							}
-						}
+				if r == nil {
+					if err := rtr.cacheHasNoDataAvailable(); err == nil {
+						continue
 					}
-					t.EndTransaction()
+				}
+				if err := rtr.startOrRestart(r); err == nil {
+					continue
 				}
 				break LOOP
 			case *bgp.RTRErrorReport:
