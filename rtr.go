@@ -128,7 +128,8 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 func (rtr *rtrConn) startOrRestart(r *ResourceManager) error {
 	t := r.BeginTransaction()
 	defer t.EndTransaction()
-	if err := rtr.sendAllPrefixes(t); err == nil {
+	err := rtr.sendAllPrefixes(t)
+	if err == nil {
 		if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
 			log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
 			return nil
@@ -140,10 +141,13 @@ func (rtr *rtrConn) startOrRestart(r *ResourceManager) error {
 func (rtr *rtrConn) typicalExchange(r *ResourceManager, peerSN uint32) error {
 	t := r.BeginTransaction()
 	defer t.EndTransaction()
-	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err == nil {
+	err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId))
+	if err == nil {
 		log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-		if err := rtr.sendDeltaPrefixes(t, peerSN); err == nil {
-			if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
+		err = rtr.sendDeltaPrefixes(t, peerSN)
+		if err == nil {
+			err = rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial()))
+			if err == nil {
 				log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
 				return nil
 			}
@@ -153,7 +157,8 @@ func (rtr *rtrConn) typicalExchange(r *ResourceManager, peerSN uint32) error {
 }
 
 func (rtr *rtrConn) noIncrementalUpdateAvailable() error {
-	if err := rtr.sendPDU(bgp.NewRTRCacheReset()); err == nil {
+	err := rtr.sendPDU(bgp.NewRTRCacheReset())
+	if err == nil {
 		log.Infof("Sent Cache Reset PDU to %v", rtr.remoteAddr)
 		return nil
 	}
@@ -161,7 +166,8 @@ func (rtr *rtrConn) noIncrementalUpdateAvailable() error {
 }
 
 func (rtr *rtrConn) cacheHasNoDataAvailable() error {
-	if err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil)); err == nil {
+	err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil))
+	if err == nil {
 		return nil
 	}
 	return err
@@ -221,7 +227,7 @@ LOOP:
 			case *bgp.RTRSerialQuery:
 				peerSN := msg.SerialNumber
 				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
-				if t.HasKey(peerSN) {
+				if r.HasKey(peerSN) {
 					if err := rtr.typicalExchange(r, peerSN); err == nil {
 						continue
 					}
