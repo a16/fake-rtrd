@@ -128,11 +128,15 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 func (rtr *rtrConn) startOrRestart(r *ResourceManager) error {
 	t := r.BeginTransaction()
 	defer t.EndTransaction()
-	err := rtr.sendAllPrefixes(t)
+	err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId))
 	if err == nil {
-		if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
-			log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
-			return nil
+		log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+		err := rtr.sendAllPrefixes(t)
+		if err == nil {
+			if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
+				log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+				return nil
+			}
 		}
 	}
 	return err
