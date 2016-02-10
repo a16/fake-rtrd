@@ -69,8 +69,8 @@ func main() {
 	}
 
 	// Load IRR data
-	r := NewResourceManager()
-	err = r.Load(args)
+	mgr := NewResourceManager()
+	err = mgr.Load(args)
 	checkError(err)
 
 	// Prepare RTR server
@@ -87,17 +87,17 @@ func main() {
 		select {
 		case conn := <-rtrServer.connCh:
 			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
-			go handleRTR(conn, r)
+			go handleRTR(conn, mgr)
 		case <-alarmCh:
 			log.Infof("Alarm triggered")
-			err = r.Reload()
+			err = mgr.Reload()
 			checkError(err)
 		case sig := <-sigCh:
 			{
 				switch sig {
 				case syscall.SIGHUP:
 					log.Infof("SIGHUP received")
-					err = r.Reload()
+					err = mgr.Reload()
 					checkError(err)
 				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
 					return

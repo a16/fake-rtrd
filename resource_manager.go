@@ -84,79 +84,79 @@ func NewResourceManager() *ResourceManager {
 	}
 }
 
-func (r *ResourceManager) Load(files []string) error {
-	r.init.Do(func() {
-		go r.serialNotify.Broadcasting(0)
-		r.ch = make(chan Request)
-		go r.run()
+func (mgr *ResourceManager) Load(files []string) error {
+	mgr.init.Do(func() {
+		go mgr.serialNotify.Broadcasting(0)
+		mgr.ch = make(chan Request)
+		go mgr.run()
 	})
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_LOAD, Key: files, Response: result}
+	mgr.ch <- Request{RequestType: REQ_LOAD, Key: files, Response: result}
 	res := <-result
 	return res.Error
 }
 
-func (r *ResourceManager) Reload() error {
+func (mgr *ResourceManager) Reload() error {
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_RELOAD, Response: result}
+	mgr.ch <- Request{RequestType: REQ_RELOAD, Response: result}
 	res := <-result
 	return res.Error
 }
 
-func (r *ResourceManager) CurrentSerial() uint32 {
+func (mgr *ResourceManager) CurrentSerial() uint32 {
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_CURRENT_SERIAL, Response: result}
+	mgr.ch <- Request{RequestType: REQ_CURRENT_SERIAL, Response: result}
 	res := <-result
 	return res.Data.(uint32)
 }
 
-func (r *ResourceManager) CurrentList(rf bgp.RouteFamily) []*FakeROA {
+func (mgr *ResourceManager) CurrentList(rf bgp.RouteFamily) []*FakeROA {
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_CURRENT_LIST, Key: reqKeys{RF: rf}, Response: result}
+	mgr.ch <- Request{RequestType: REQ_CURRENT_LIST, Key: reqKeys{RF: rf}, Response: result}
 	res := <-result
 	return res.Data.([]*FakeROA)
 }
 
-func (r *ResourceManager) ToBeDeleted(rf bgp.RouteFamily, sn uint32) []*FakeROA {
+func (mgr *ResourceManager) ToBeDeleted(rf bgp.RouteFamily, sn uint32) []*FakeROA {
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_LIST_TO_BE_DELETED, Key: reqKeys{RF: rf, SN: sn}, Response: result}
+	mgr.ch <- Request{RequestType: REQ_LIST_TO_BE_DELETED, Key: reqKeys{RF: rf, SN: sn}, Response: result}
 	res := <-result
 	return res.Data.([]*FakeROA)
 }
 
-func (r *ResourceManager) ToBeAdded(rf bgp.RouteFamily, sn uint32) []*FakeROA {
+func (mgr *ResourceManager) ToBeAdded(rf bgp.RouteFamily, sn uint32) []*FakeROA {
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_LIST_TO_BE_ADDED, Key: reqKeys{RF: rf, SN: sn}, Response: result}
+	mgr.ch <- Request{RequestType: REQ_LIST_TO_BE_ADDED, Key: reqKeys{RF: rf, SN: sn}, Response: result}
 	res := <-result
 	return res.Data.([]*FakeROA)
 }
 
-func (r *ResourceManager) HasKey(sn uint32) bool {
+func (mgr *ResourceManager) HasKey(sn uint32) bool {
 	result := make(chan *Response)
-	r.ch <- Request{RequestType: REQ_IF_SERIAL_EXISTS, Key: sn, Response: result}
+	mgr.ch <- Request{RequestType: REQ_IF_SERIAL_EXISTS, Key: sn, Response: result}
 	res := <-result
 	return res.Data.(bool)
 }
 
-func (r *ResourceManager) BeginTransaction() *ResourceManager {
+func (mgr *ResourceManager) BeginTransaction() *ResourceManager {
 	result := make(chan *Response)
-	t := make(chan Request)
-	r.ch <- Request{RequestType: REQ_BEGIN_TRANSACTION, Response: result, transaction: t}
+	trans := make(chan Request)
+	mgr.ch <- Request{RequestType: REQ_BEGIN_TRANSACTION, Response: result, transaction: trans}
 	return &ResourceManager{
-		ch:           t,
-		serialNotify: r.serialNotify,
-		init:         r.init,
+		ch:           trans,
+		serialNotify: mgr.serialNotify,
+		init:         mgr.init,
 	}
 }
 
-func (r *ResourceManager) EndTransaction() {
-	r.ch <- Request{RequestType: REQ_END_TRANSACTION}
+func (mgr *ResourceManager) EndTransaction() {
+	mgr.ch <- Request{RequestType: REQ_END_TRANSACTION}
 }
 
-func handleRequests(r *ResourceManager, rsrc *resource) {
+func handleRequests(mgr *ResourceManager, rsrc *resource) {
 	var err error
 	for {
-		req := <-r.ch
+		req := <-mgr.ch
 		switch req.RequestType {
 		case REQ_LOAD:
 			rsrc, err = newResource(req.Key.([]string))
@@ -191,7 +191,7 @@ func handleRequests(r *ResourceManager, rsrc *resource) {
 				}
 			}
 			if serialNotify {
-				r.serialNotify.Send(true)
+				mgr.serialNotify.Send(true)
 			}
 			req.Response <- &Response{Error: nil}
 		case REQ_CURRENT_LIST:
@@ -259,7 +259,7 @@ func stringToValues(str string) (net.IP, uint8, uint8, uint32) {
 	return addr, uint8(m), uint8(maxLen), uint32(asn)
 }
 
-func (r *ResourceManager) run() {
+func (mgr *ResourceManager) run() {
 	var rsrc *resource
-	handleRequests(r, rsrc)
+	handleRequests(mgr, rsrc)
 }

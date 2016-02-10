@@ -68,11 +68,11 @@ func (s *rtrServer) run() {
 	}
 }
 
-func (rtr *rtrConn) sendDeltaPrefixes(r *ResourceManager, peerSN uint32) error {
+func (rtr *rtrConn) sendDeltaPrefixes(mgr *ResourceManager, peerSN uint32) error {
 	var counter uint32
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		counter = 0
-		for _, v := range r.ToBeAdded(rf, peerSN) {
+		for _, v := range mgr.ToBeAdded(rf, peerSN) {
 			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, bgp.ANNOUNCEMENT)); err != nil {
 				return err
 			}
@@ -84,7 +84,7 @@ func (rtr *rtrConn) sendDeltaPrefixes(r *ResourceManager, peerSN uint32) error {
 		}
 
 		counter = 0
-		for _, v := range r.ToBeDeleted(rf, peerSN) {
+		for _, v := range mgr.ToBeDeleted(rf, peerSN) {
 			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, bgp.WITHDRAWAL)); err != nil {
 				return err
 			}
@@ -98,11 +98,11 @@ func (rtr *rtrConn) sendDeltaPrefixes(r *ResourceManager, peerSN uint32) error {
 	return nil
 }
 
-func (rtr *rtrConn) sendAllPrefixes(r *ResourceManager) error {
+func (rtr *rtrConn) sendAllPrefixes(mgr *ResourceManager) error {
 	var counter uint32
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		counter = 0
-		for _, v := range r.CurrentList(rf) {
+		for _, v := range mgr.CurrentList(rf) {
 			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, bgp.ANNOUNCEMENT)); err != nil {
 				return err
 			}
@@ -125,44 +125,44 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 	return nil
 }
 
-func (rtr *rtrConn) startOrRestart(r *ResourceManager) error {
-	t := r.BeginTransaction()
-	defer t.EndTransaction()
+func (rtr *rtrConn) startOrRestart(mgr *ResourceManager) error {
+	trans := mgr.BeginTransaction()
+	defer trans.EndTransaction()
 
 	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
 		return err
 	}
 	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 
-	if err := rtr.sendAllPrefixes(t); err != nil {
+	if err := rtr.sendAllPrefixes(trans); err != nil {
 		return err
 	}
 
-	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err != nil {
+	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, trans.CurrentSerial())); err != nil {
 		return err
 	}
-	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, trans.CurrentSerial())
 
 	return nil
 }
 
-func (rtr *rtrConn) typicalExchange(r *ResourceManager, peerSN uint32) error {
-	t := r.BeginTransaction()
-	defer t.EndTransaction()
+func (rtr *rtrConn) typicalExchange(mgr *ResourceManager, peerSN uint32) error {
+	trans := mgr.BeginTransaction()
+	defer trans.EndTransaction()
 
 	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
 		return err
 	}
 	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 
-	if err := rtr.sendDeltaPrefixes(t, peerSN); err != nil {
+	if err := rtr.sendDeltaPrefixes(trans, peerSN); err != nil {
 		return err
 	}
 
-	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err != nil {
+	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, trans.CurrentSerial())); err != nil {
 		return err
 	}
-	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, trans.CurrentSerial())
 
 	return nil
 }
@@ -192,8 +192,8 @@ type errMsg struct {
 	data []byte
 }
 
-func handleRTR(rtr *rtrConn, r *ResourceManager) {
-	bcastReceiver := r.serialNotify.Join()
+func handleRTR(rtr *rtrConn, mgr *ResourceManager) {
+	bcastReceiver := mgr.serialNotify.Join()
 	scanner := bufio.NewScanner(bufio.NewReader(rtr.conn))
 	scanner.Split(bgp.SplitRTR)
 
@@ -222,12 +222,12 @@ LOOP:
 	for {
 		select {
 		case <-bcastReceiver.In:
-			t := r.BeginTransaction()
-			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, t.CurrentSerial())); err != nil {
+			trans := mgr.BeginTransaction()
+			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, trans.CurrentSerial())); err != nil {
 				break LOOP
 			}
-			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
-			t.EndTransaction()
+			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, trans.CurrentSerial())
+			trans.EndTransaction()
 		case msg := <-errCh:
 			rtr.sendPDU(bgp.NewRTRErrorReport(msg.code, msg.data, nil))
 			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, msg.code)
@@ -237,8 +237,8 @@ LOOP:
 			case *bgp.RTRSerialQuery:
 				peerSN := msg.SerialNumber
 				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
-				if r.HasKey(peerSN) {
-					if err := rtr.typicalExchange(r, peerSN); err == nil {
+				if mgr.HasKey(peerSN) {
+					if err := rtr.typicalExchange(mgr, peerSN); err == nil {
 						continue
 					}
 				}
@@ -248,12 +248,12 @@ LOOP:
 				break LOOP
 			case *bgp.RTRResetQuery:
 				log.Infof("Received Reset Query PDU from %v", rtr.remoteAddr)
-				if r == nil {
+				if mgr == nil {
 					if err := rtr.cacheHasNoDataAvailable(); err == nil {
 						continue
 					}
 				}
-				if err := rtr.startOrRestart(r); err == nil {
+				if err := rtr.startOrRestart(mgr); err == nil {
 					continue
 				}
 				break LOOP
