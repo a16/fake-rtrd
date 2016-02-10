@@ -128,53 +128,59 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 func (rtr *rtrConn) startOrRestart(r *ResourceManager) error {
 	t := r.BeginTransaction()
 	defer t.EndTransaction()
-	err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId))
-	if err == nil {
-		log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-		err := rtr.sendAllPrefixes(t)
-		if err == nil {
-			if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err == nil {
-				log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
-				return nil
-			}
-		}
+
+	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
+		return err
 	}
-	return err
+	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+
+	if err := rtr.sendAllPrefixes(t); err != nil {
+		return err
+	}
+
+	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err != nil {
+		return err
+	}
+	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+
+	return nil
 }
 
 func (rtr *rtrConn) typicalExchange(r *ResourceManager, peerSN uint32) error {
 	t := r.BeginTransaction()
 	defer t.EndTransaction()
-	err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId))
-	if err == nil {
-		log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-		err = rtr.sendDeltaPrefixes(t, peerSN)
-		if err == nil {
-			err = rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial()))
-			if err == nil {
-				log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
-				return nil
-			}
-		}
+
+	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
+		return err
 	}
-	return err
+	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+
+	if err := rtr.sendDeltaPrefixes(t, peerSN); err != nil {
+		return err
+	}
+
+	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, t.CurrentSerial())); err != nil {
+		return err
+	}
+	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, t.CurrentSerial())
+
+	return nil
 }
 
 func (rtr *rtrConn) noIncrementalUpdateAvailable() error {
-	err := rtr.sendPDU(bgp.NewRTRCacheReset())
-	if err == nil {
-		log.Infof("Sent Cache Reset PDU to %v", rtr.remoteAddr)
-		return nil
+	if err := rtr.sendPDU(bgp.NewRTRCacheReset()); err != nil {
+		return err
 	}
-	return err
+	log.Infof("Sent Cache Reset PDU to %v", rtr.remoteAddr)
+
+	return nil
 }
 
 func (rtr *rtrConn) cacheHasNoDataAvailable() error {
-	err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil))
-	if err == nil {
-		return nil
+	if err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil)); err != nil {
+		return err
 	}
-	return err
+	return nil
 }
 
 func RFToIPVer(rf bgp.RouteFamily) string {
