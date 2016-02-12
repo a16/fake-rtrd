@@ -36,7 +36,7 @@ var commandOpts struct {
 func checkError(err error) {
 	if err != nil {
 		defer log.Infof("Daemon stopped")
-		log.Panicf("%v", err)
+		log.Fatalf("%v", err)
 	}
 }
 
