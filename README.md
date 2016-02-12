@@ -12,6 +12,21 @@ It would be useful for RPKI-RTR testing. Do not use this in production because t
 ```
 
 ### Usage
+
+```bash
+Usage:
+  fake-rtrd [OPTIONS] [RPSLFILES]...
+
+Application Options:
+  -d, --debug     Show verbose debug information (default: false)
+  -i, --interval= Specify interval(1-59 min) for reloading pseudo ROA table (default: 5)
+  -p, --port=     Specify listen port for RTR (default: 323)
+  -q, --quiet     Quiet mode (default: false)
+
+Help Options:
+  -h, --help      Show this help message
+```
+
 First, you should prepare a RPSL file. At least, route(6) field, origin field, and source field are required in a object.
 Let's say its name is ```test.db```.
 
