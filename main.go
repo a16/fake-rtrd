@@ -39,10 +39,46 @@ func checkError(err error) {
 	}
 }
 
-func main() {
-	runtime.GOMAXPROCS(runtime.NumCPU())
+func mainLoop(port int, interval int, mgr *ResourceManager) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
+	// Prepare RTR server
+	rtrServer := newRTRServer(port)
+	go rtrServer.run()
+	log.Infof("Daemon started")
+
+	// cron for managing time
+	alarmCh := make(chan bool)
+	cronSpec := fmt.Sprintf("0 */%d * * * *", interval)
+	go timeKeeper(alarmCh, cronSpec)
+
+	for {
+		select {
+		case conn := <-rtrServer.connCh:
+			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
+			go handleRTR(conn, mgr)
+		case <-alarmCh:
+			log.Infof("Alarm triggered")
+			err := mgr.Reload()
+			checkError(err)
+		case sig := <-sigCh:
+			{
+				switch sig {
+				case syscall.SIGHUP:
+					log.Infof("SIGHUP received")
+					err := mgr.Reload()
+					checkError(err)
+				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
+					return
+				}
+			}
+		}
+	}
+}
+
+func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Parse options
 	parser := flags.NewParser(&commandOpts, flags.Default)
@@ -73,37 +109,6 @@ func main() {
 	err = mgr.Load(args)
 	checkError(err)
 
-	// Prepare RTR server
-	rtrServer := newRTRServer(commandOpts.Port)
-	go rtrServer.run()
-	log.Infof("Daemon started")
-
-	// cron for managing time
-	alarmCh := make(chan bool)
-	cronSpec := fmt.Sprintf("0 */%d * * * *", interval)
-	go timeKeeper(alarmCh, cronSpec)
-
-	for {
-		select {
-		case conn := <-rtrServer.connCh:
-			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
-			go handleRTR(conn, mgr)
-		case <-alarmCh:
-			log.Infof("Alarm triggered")
-			err = mgr.Reload()
-			checkError(err)
-		case sig := <-sigCh:
-			{
-				switch sig {
-				case syscall.SIGHUP:
-					log.Infof("SIGHUP received")
-					err = mgr.Reload()
-					checkError(err)
-				case syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
-					return
-				}
-			}
-		}
-	}
+	mainLoop(commandOpts.Port, interval, mgr)
 	log.Infof("Daemon stopped")
 }
