@@ -39,9 +39,14 @@ func checkError(err error) {
 	}
 }
 
-func mainLoop(port int, interval int, mgr *ResourceManager) {
+func mainLoop(args []string, port int, interval int) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
+	// Load IRR data
+	mgr := NewResourceManager()
+	err := mgr.Load(args)
+	checkError(err)
 
 	// Prepare RTR server
 	rtrServer := newRTRServer(port)
@@ -104,11 +109,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load IRR data
-	mgr := NewResourceManager()
-	err = mgr.Load(args)
-	checkError(err)
-
-	mainLoop(commandOpts.Port, interval, mgr)
+	mainLoop(args, commandOpts.Port, interval)
 	log.Infof("Daemon stopped")
 }
