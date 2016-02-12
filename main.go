@@ -30,6 +30,7 @@ var commandOpts struct {
 	Debug    bool `short:"d" long:"debug" default:"false" description:"Show verbose debug information"`
 	Interval int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
 	Port     int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
+	Quiet    bool `short:"q" long:"quiet" default:"false" description:"Quiet mode"`
 }
 
 func checkError(err error) {
@@ -39,9 +40,23 @@ func checkError(err error) {
 	}
 }
 
-func mainLoop(args []string, port int, interval int) {
+func mainLoop(args []string, port int, interval int, debug bool, quiet bool) {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
+	// Set log level
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006/01/02 15:04:05",
+	})
+	if quiet {
+		log.SetLevel(log.FatalLevel)
+	} else {
+		log.SetLevel(log.InfoLevel)
+		if debug {
+			log.SetLevel(log.DebugLevel)
+		}
+	}
 
 	// Load IRR data
 	mgr := NewResourceManager()
@@ -93,15 +108,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "2006/01/02 15:04:05",
-	})
-	log.SetLevel(log.InfoLevel)
-	if commandOpts.Debug {
-		log.SetLevel(log.DebugLevel)
-	}
-
 	var interval int
 	if commandOpts.Interval >= 1 && commandOpts.Interval <= 59 {
 		interval = commandOpts.Interval
@@ -109,6 +115,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	mainLoop(args, commandOpts.Port, interval)
+	mainLoop(args, commandOpts.Port, interval, commandOpts.Debug, commandOpts.Quiet)
 	log.Infof("Daemon stopped")
 }
