@@ -241,9 +241,10 @@ LOOP:
 					if err := rtr.typicalExchange(mgr, peerSN); err == nil {
 						continue
 					}
-				}
-				if err := rtr.noIncrementalUpdateAvailable(); err == nil {
-					continue
+				} else {
+					if err := rtr.noIncrementalUpdateAvailable(); err == nil {
+						continue
+					}
 				}
 				break LOOP
 			case *bgp.RTRResetQuery:
