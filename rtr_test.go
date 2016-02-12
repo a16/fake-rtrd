@@ -3,33 +3,33 @@ package main
 import (
 	"bufio"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"testing"
-	"time"
 
-	log "github.com/Sirupsen/logrus"
-	"github.com/grafov/bcast"
 	"github.com/osrg/gobgp/packet"
 	. "github.com/r7kamura/gospel"
 )
 
-var pROA *pseudoROA
-var pROAGroup *bcast.Group
-
 func TestMain(m *testing.M) {
 	log.SetOutput(ioutil.Discard)
-	prepare([]string{"test.db"})
 	code := m.Run()
 	defer os.Exit(code)
 }
 
-func prepare(files []string) {
-	pROA, _ = newPseudoROA(files)
-	pROAGroup = bcast.NewGroup()
-	go pROAGroup.Broadcasting(0)
+func prepare(content []string) *os.File {
+	rpslFile, _ := ioutil.TempFile(os.TempDir(), "rtr_test.db")
+	addRPSL(rpslFile, content)
 
-	go run(42420, 59, pROA, pROAGroup)
+	go mainLoop([]string{rpslFile.Name()}, 42420, 2, false, true)
+	return rpslFile
+}
+
+func addRPSL(f *os.File, content []string) {
+	for _, text := range content {
+		f.WriteString(text)
+	}
 }
 
 func connectRTRServer() (*rtrConn, *bufio.Scanner) {
@@ -59,6 +59,19 @@ func TestHandleRTR(t *testing.T) {
 		var buf []byte
 		var m bgp.RTRMessage
 		var sn uint32
+
+		initContent := []string{
+			"route:  192.168.0.0/24\n",
+			"origin: AS65000\n",
+			"source: TEST\n",
+			"\n",
+			"route6: 2001:db8::/32\n",
+			"origin: AS65000\n",
+			"source: TEST\n",
+			"\n",
+		}
+		f := prepare(initContent)
+		defer os.Remove(f.Name())
 		rtr, scanner := connectRTRServer()
 
 		Context("6.1. Start or Restart", func() {
@@ -102,7 +115,7 @@ func TestHandleRTR(t *testing.T) {
 		})
 
 		Context("6.2. Typical Exchange", func() {
-			Context("When its Serial Number is latest", func() {
+			Context("When its serial number is the latest", func() {
 				pdu := bgp.NewRTRSerialQuery(rtr.sessionId, sn)
 				rtr.sendPDU(pdu)
 
@@ -123,10 +136,22 @@ func TestHandleRTR(t *testing.T) {
 				})
 			})
 
-			Context("When its Serial Number is not latest", func() {
-				nextSN := uint32(time.Now().Unix())
-				pROA.addValidInfo(nextSN, "AS65002", "172.16.0.0/24", 32)
-				pROA.reload(pROAGroup)
+			Context("When its serial number is behind", func() {
+				updateContent := []string{
+					"route:  192.168.1.0/24\n",
+					"origin: AS65001\n",
+					"source: TEST\n",
+					"\n",
+				}
+				addRPSL(f, updateContent)
+
+				scanner.Scan()
+				buf = scanner.Bytes()
+				m, _ = bgp.ParseRTR(buf)
+				It("should receive Serial Notify PDU", func() {
+					_, ok := m.(*bgp.RTRSerialNotify)
+					Expect(ok).To(Equal, true)
+				})
 
 				pdu := bgp.NewRTRSerialQuery(rtr.sessionId, sn)
 				rtr.sendPDU(pdu)
@@ -137,6 +162,15 @@ func TestHandleRTR(t *testing.T) {
 				It("should receive Cache Response PDU", func() {
 					_, ok := m.(*bgp.RTRCacheResponse)
 					Expect(ok).To(Equal, true)
+				})
+
+				scanner.Scan()
+				buf = scanner.Bytes()
+				m, _ = bgp.ParseRTR(buf)
+				It("should receive IPv4 Prefix PDU", func() {
+					rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+					Expect(ok).To(Equal, true)
+					Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV4_PREFIX))
 				})
 
 				scanner.Scan()
