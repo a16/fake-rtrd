@@ -20,6 +20,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/osrg/gobgp/packet"
@@ -40,7 +41,7 @@ type rtrServer struct {
 
 func newRTRServer(port int) *rtrServer {
 	s := &rtrServer{
-		connCh:     make(chan *rtrConn),
+		connCh:     make(chan *rtrConn, 1),
 		listenPort: port,
 	}
 	return s
@@ -68,54 +69,6 @@ func (s *rtrServer) run() {
 	}
 }
 
-func (rtr *rtrConn) sendDeltaPrefixes(mgr *ResourceManager, peerSN uint32) error {
-	var counter uint32
-	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
-		counter = 0
-		for _, v := range mgr.ToBeAdded(rf, peerSN) {
-			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, bgp.ANNOUNCEMENT)); err != nil {
-				return err
-			}
-			counter++
-			log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS)
-		}
-		if !commandOpts.Debug && counter != 0 {
-			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, counter)
-		}
-
-		counter = 0
-		for _, v := range mgr.ToBeDeleted(rf, peerSN) {
-			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, bgp.WITHDRAWAL)); err != nil {
-				return err
-			}
-			counter++
-			log.Debugf("Sent %s PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: WITHDRAW)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS)
-		}
-		if !commandOpts.Debug && counter != 0 {
-			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: WITHDRAW)", RFToIPVer(rf), rtr.remoteAddr, counter)
-		}
-	}
-	return nil
-}
-
-func (rtr *rtrConn) sendAllPrefixes(mgr *ResourceManager) error {
-	var counter uint32
-	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
-		counter = 0
-		for _, v := range mgr.CurrentList(rf) {
-			if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, bgp.ANNOUNCEMENT)); err != nil {
-				return err
-			}
-			counter++
-			log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS)
-		}
-		if !commandOpts.Debug && counter != 0 {
-			log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: ANNOUNCE)", RFToIPVer(rf), rtr.remoteAddr, counter)
-		}
-	}
-	return nil
-}
-
 func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 	data, _ := pdu.Serialize()
 	_, err := rtr.conn.Write(data)
@@ -125,44 +78,33 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 	return nil
 }
 
-func (rtr *rtrConn) startOrRestart(mgr *ResourceManager) error {
-	trans := mgr.BeginTransaction()
-	defer trans.EndTransaction()
-
+func (rtr *rtrConn) cacheResponse(currentSN uint32, lists map[uint8]map[bgp.RouteFamily][]*FakeROA) error {
 	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
 		return err
 	}
 	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 
-	if err := rtr.sendAllPrefixes(trans); err != nil {
-		return err
+	var counter uint32
+	for flag, u := range lists {
+		for rf, roas := range u {
+			counter = 0
+			for _, v := range roas {
+				if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)); err != nil {
+					return err
+				}
+				counter++
+				log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: %v)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)
+			}
+			if !commandOpts.Debug && counter != 0 {
+				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), rtr.remoteAddr, counter, flag)
+			}
+		}
 	}
 
-	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, trans.CurrentSerial())); err != nil {
+	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, currentSN)); err != nil {
 		return err
 	}
-	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, trans.CurrentSerial())
-
-	return nil
-}
-
-func (rtr *rtrConn) typicalExchange(mgr *ResourceManager, peerSN uint32) error {
-	trans := mgr.BeginTransaction()
-	defer trans.EndTransaction()
-
-	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
-		return err
-	}
-	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-
-	if err := rtr.sendDeltaPrefixes(trans, peerSN); err != nil {
-		return err
-	}
-
-	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, trans.CurrentSerial())); err != nil {
-		return err
-	}
-	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, trans.CurrentSerial())
+	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, currentSN)
 
 	return nil
 }
@@ -180,6 +122,8 @@ func (rtr *rtrConn) cacheHasNoDataAvailable() error {
 	if err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil)); err != nil {
 		return err
 	}
+	log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, bgp.NO_DATA_AVAILABLE)
+
 	return nil
 }
 
@@ -192,13 +136,19 @@ type errMsg struct {
 	data []byte
 }
 
+type resourceResponse struct {
+	hasKey bool
+	sn     uint32
+	list   map[uint8]map[bgp.RouteFamily][]*FakeROA
+}
+
 func handleRTR(rtr *rtrConn, mgr *ResourceManager) {
 	bcastReceiver := mgr.serialNotify.Join()
 	scanner := bufio.NewScanner(bufio.NewReader(rtr.conn))
 	scanner.Split(bgp.SplitRTR)
 
-	msgCh := make(chan bgp.RTRMessage)
-	errCh := make(chan *errMsg)
+	msgCh := make(chan bgp.RTRMessage, 1)
+	errCh := make(chan *errMsg, 1)
 	go func() {
 		defer func() {
 			log.Infof("Connection to %v was closed. (ID: %v)", rtr.remoteAddr, rtr.sessionId)
@@ -222,12 +172,11 @@ LOOP:
 	for {
 		select {
 		case <-bcastReceiver.In:
-			trans := mgr.BeginTransaction()
-			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, trans.CurrentSerial())); err != nil {
+			currentSN := mgr.CurrentSerial()
+			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, currentSN)); err != nil {
 				break LOOP
 			}
-			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, trans.CurrentSerial())
-			trans.EndTransaction()
+			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, currentSN)
 		case msg := <-errCh:
 			rtr.sendPDU(bgp.NewRTRErrorReport(msg.code, msg.data, nil))
 			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, msg.code)
@@ -237,26 +186,73 @@ LOOP:
 			case *bgp.RTRSerialQuery:
 				peerSN := msg.SerialNumber
 				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
-				if mgr.HasKey(peerSN) {
-					if err := rtr.typicalExchange(mgr, peerSN); err == nil {
-						continue
+
+				timeoutCh := make(chan bool, 1)
+				resourceResponseCh := make(chan *resourceResponse, 1)
+
+				go func(tCh chan bool) {
+					time.Sleep(10 * time.Second)
+					tCh <- true
+				}(timeoutCh)
+
+				go func(rrCh chan *resourceResponse, peerSN uint32) {
+					trans := mgr.BeginTransaction()
+					defer trans.EndTransaction()
+					rrCh <- &resourceResponse{
+						hasKey: trans.HasKey(peerSN),
+						sn:     trans.CurrentSerial(),
+						list:   trans.DeltaList(peerSN),
 					}
-				} else {
-					if err := rtr.noIncrementalUpdateAvailable(); err == nil {
+				}(resourceResponseCh, peerSN)
+
+				select {
+				case rr := <-resourceResponseCh:
+					if rr.hasKey {
+						if err := rtr.cacheResponse(rr.sn, rr.list); err == nil {
+							continue
+						}
+					} else {
+						if err := rtr.noIncrementalUpdateAvailable(); err == nil {
+							continue
+						}
+					}
+				case <-timeoutCh:
+					if err := rtr.cacheHasNoDataAvailable(); err == nil {
 						continue
 					}
 				}
 				break LOOP
 			case *bgp.RTRResetQuery:
 				log.Infof("Received Reset Query PDU from %v", rtr.remoteAddr)
-				if mgr == nil {
+
+				timeoutCh := make(chan bool, 1)
+				resourceResponseCh := make(chan *resourceResponse, 1)
+
+				go func(tCh chan bool) {
+					time.Sleep(10 * time.Second)
+					tCh <- true
+				}(timeoutCh)
+
+				go func(rrCh chan *resourceResponse) {
+					trans := mgr.BeginTransaction()
+					defer trans.EndTransaction()
+					rrCh <- &resourceResponse{
+						sn:   trans.CurrentSerial(),
+						list: trans.CurrentList(),
+					}
+				}(resourceResponseCh)
+
+				select {
+				case rr := <-resourceResponseCh:
+					if err := rtr.cacheResponse(rr.sn, rr.list); err == nil {
+						continue
+					}
+				case <-timeoutCh:
 					if err := rtr.cacheHasNoDataAvailable(); err == nil {
 						continue
 					}
 				}
-				if err := rtr.startOrRestart(mgr); err == nil {
-					continue
-				}
+
 				break LOOP
 			case *bgp.RTRErrorReport:
 				log.Warnf("Received Error Report PDU from %v (%#v)", rtr.remoteAddr, msg)

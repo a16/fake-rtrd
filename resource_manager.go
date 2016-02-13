@@ -37,8 +37,7 @@ const (
 	REQ_RELOAD
 	REQ_CURRENT_SERIAL
 	REQ_CURRENT_LIST
-	REQ_LIST_TO_BE_DELETED
-	REQ_LIST_TO_BE_ADDED
+	REQ_DELTA_LIST
 	REQ_IF_SERIAL_EXISTS
 	REQ_BEGIN_TRANSACTION
 	REQ_END_TRANSACTION
@@ -52,11 +51,6 @@ type Request struct {
 	Value       string
 	Response    chan *Response
 	transaction chan Request
-}
-
-type reqKeys struct {
-	RF bgp.RouteFamily
-	SN uint32
 }
 
 type FakeROA struct {
@@ -110,25 +104,18 @@ func (mgr *ResourceManager) CurrentSerial() uint32 {
 	return res.Data.(uint32)
 }
 
-func (mgr *ResourceManager) CurrentList(rf bgp.RouteFamily) []*FakeROA {
+func (mgr *ResourceManager) CurrentList() map[uint8]map[bgp.RouteFamily][]*FakeROA {
 	result := make(chan *Response)
-	mgr.ch <- Request{RequestType: REQ_CURRENT_LIST, Key: reqKeys{RF: rf}, Response: result}
+	mgr.ch <- Request{RequestType: REQ_CURRENT_LIST, Response: result}
 	res := <-result
-	return res.Data.([]*FakeROA)
+	return res.Data.(map[uint8]map[bgp.RouteFamily][]*FakeROA)
 }
 
-func (mgr *ResourceManager) ToBeDeleted(rf bgp.RouteFamily, sn uint32) []*FakeROA {
+func (mgr *ResourceManager) DeltaList(sn uint32) map[uint8]map[bgp.RouteFamily][]*FakeROA {
 	result := make(chan *Response)
-	mgr.ch <- Request{RequestType: REQ_LIST_TO_BE_DELETED, Key: reqKeys{RF: rf, SN: sn}, Response: result}
+	mgr.ch <- Request{RequestType: REQ_DELTA_LIST, Key: sn, Response: result}
 	res := <-result
-	return res.Data.([]*FakeROA)
-}
-
-func (mgr *ResourceManager) ToBeAdded(rf bgp.RouteFamily, sn uint32) []*FakeROA {
-	result := make(chan *Response)
-	mgr.ch <- Request{RequestType: REQ_LIST_TO_BE_ADDED, Key: reqKeys{RF: rf, SN: sn}, Response: result}
-	res := <-result
-	return res.Data.([]*FakeROA)
+	return res.Data.(map[uint8]map[bgp.RouteFamily][]*FakeROA)
 }
 
 func (mgr *ResourceManager) HasKey(sn uint32) bool {
@@ -193,16 +180,30 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 			if serialNotify {
 				mgr.serialNotify.Send(true)
 			}
+
 			req.Response <- &Response{Error: nil}
 		case REQ_CURRENT_LIST:
-			keys := req.Key.(reqKeys)
-			req.Response <- &Response{Data: fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][keys.RF]))}
-		case REQ_LIST_TO_BE_DELETED:
-			keys := req.Key.(reqKeys)
-			req.Response <- &Response{Data: fakeROALists(rsrc, treeToSet(rsrc.table[keys.SN][keys.RF]).Difference(treeToSet(rsrc.table[rsrc.currentSN][keys.RF])))}
-		case REQ_LIST_TO_BE_ADDED:
-			keys := req.Key.(reqKeys)
-			req.Response <- &Response{Data: fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][keys.RF]).Difference(treeToSet(rsrc.table[keys.SN][keys.RF])))}
+			lists := map[uint8]map[bgp.RouteFamily][]*FakeROA{
+				bgp.ANNOUNCEMENT: map[bgp.RouteFamily][]*FakeROA{},
+			}
+
+			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv4_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]))
+			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv6_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]))
+
+			req.Response <- &Response{Data: lists}
+		case REQ_DELTA_LIST:
+			k := req.Key.(uint32)
+			lists := map[uint8]map[bgp.RouteFamily][]*FakeROA{
+				bgp.ANNOUNCEMENT: map[bgp.RouteFamily][]*FakeROA{},
+				bgp.WITHDRAWAL:   map[bgp.RouteFamily][]*FakeROA{},
+			}
+
+			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv4_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv4_UC])))
+			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv6_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv6_UC])))
+			lists[bgp.WITHDRAWAL][bgp.RF_IPv4_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC])))
+			lists[bgp.WITHDRAWAL][bgp.RF_IPv6_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC])))
+
+			req.Response <- &Response{Data: lists}
 		case REQ_IF_SERIAL_EXISTS:
 			_, ok := rsrc.table[req.Key.(uint32)]
 			req.Response <- &Response{Data: ok}
