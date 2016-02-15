@@ -78,17 +78,17 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 	return nil
 }
 
-func (rtr *rtrConn) cacheResponse(currentSN uint32, lists map[uint8]map[bgp.RouteFamily][]*FakeROA) error {
+func (rtr *rtrConn) cacheResponse(currentSN uint32, lists FakeROATable) error {
 	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
 		return err
 	}
 	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 
 	var counter uint32
-	for flag, u := range lists {
-		for rf, roas := range u {
+	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
+		for _, flag := range []uint8{bgp.ANNOUNCEMENT, bgp.WITHDRAWAL} {
 			counter = 0
-			for _, v := range roas {
+			for _, v := range lists[rf][flag] {
 				if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)); err != nil {
 					return err
 				}
@@ -138,7 +138,7 @@ type errMsg struct {
 
 type resourceResponse struct {
 	sn   uint32
-	list map[uint8]map[bgp.RouteFamily][]*FakeROA
+	list FakeROATable
 }
 
 func handleRTR(rtr *rtrConn, mgr *ResourceManager) {

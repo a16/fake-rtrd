@@ -60,6 +60,8 @@ type FakeROA struct {
 	AS        uint32
 }
 
+type FakeROATable map[bgp.RouteFamily]map[uint8][]*FakeROA
+
 type Response struct {
 	Error error
 	Data  interface{}
@@ -104,18 +106,18 @@ func (mgr *ResourceManager) CurrentSerial() uint32 {
 	return res.Data.(uint32)
 }
 
-func (mgr *ResourceManager) CurrentList() map[uint8]map[bgp.RouteFamily][]*FakeROA {
+func (mgr *ResourceManager) CurrentList() FakeROATable {
 	result := make(chan *Response)
 	mgr.ch <- Request{RequestType: REQ_CURRENT_LIST, Response: result}
 	res := <-result
-	return res.Data.(map[uint8]map[bgp.RouteFamily][]*FakeROA)
+	return res.Data.(FakeROATable)
 }
 
-func (mgr *ResourceManager) DeltaList(sn uint32) map[uint8]map[bgp.RouteFamily][]*FakeROA {
+func (mgr *ResourceManager) DeltaList(sn uint32) FakeROATable {
 	result := make(chan *Response)
 	mgr.ch <- Request{RequestType: REQ_DELTA_LIST, Key: sn, Response: result}
 	res := <-result
-	return res.Data.(map[uint8]map[bgp.RouteFamily][]*FakeROA)
+	return res.Data.(FakeROATable)
 }
 
 func (mgr *ResourceManager) HasKey(sn uint32) bool {
@@ -183,25 +185,26 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 
 			req.Response <- &Response{Error: nil}
 		case REQ_CURRENT_LIST:
-			lists := map[uint8]map[bgp.RouteFamily][]*FakeROA{
-				bgp.ANNOUNCEMENT: map[bgp.RouteFamily][]*FakeROA{},
+			lists := FakeROATable{
+				bgp.RF_IPv4_UC: map[uint8][]*FakeROA{},
+				bgp.RF_IPv6_UC: map[uint8][]*FakeROA{},
 			}
 
-			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv4_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]))
-			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv6_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]))
+			lists[bgp.RF_IPv4_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]))
+			lists[bgp.RF_IPv6_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]))
 
 			req.Response <- &Response{Data: lists}
 		case REQ_DELTA_LIST:
 			k := req.Key.(uint32)
-			lists := map[uint8]map[bgp.RouteFamily][]*FakeROA{
-				bgp.ANNOUNCEMENT: map[bgp.RouteFamily][]*FakeROA{},
-				bgp.WITHDRAWAL:   map[bgp.RouteFamily][]*FakeROA{},
+			lists := FakeROATable{
+				bgp.RF_IPv4_UC: map[uint8][]*FakeROA{},
+				bgp.RF_IPv6_UC: map[uint8][]*FakeROA{},
 			}
 
-			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv4_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv4_UC])))
-			lists[bgp.ANNOUNCEMENT][bgp.RF_IPv6_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv6_UC])))
-			lists[bgp.WITHDRAWAL][bgp.RF_IPv4_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC])))
-			lists[bgp.WITHDRAWAL][bgp.RF_IPv6_UC] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC])))
+			lists[bgp.RF_IPv4_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv4_UC])))
+			lists[bgp.RF_IPv6_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv6_UC])))
+			lists[bgp.RF_IPv4_UC][bgp.WITHDRAWAL] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC])))
+			lists[bgp.RF_IPv6_UC][bgp.WITHDRAWAL] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC])))
 
 			req.Response <- &Response{Data: lists}
 		case REQ_IF_SERIAL_EXISTS:
