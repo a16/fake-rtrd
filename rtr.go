@@ -137,9 +137,8 @@ type errMsg struct {
 }
 
 type resourceResponse struct {
-	hasKey bool
-	sn     uint32
-	list   map[uint8]map[bgp.RouteFamily][]*FakeROA
+	sn   uint32
+	list map[uint8]map[bgp.RouteFamily][]*FakeROA
 }
 
 func handleRTR(rtr *rtrConn, mgr *ResourceManager) {
@@ -159,10 +158,12 @@ func handleRTR(rtr *rtrConn, mgr *ResourceManager) {
 			buf := scanner.Bytes()
 			if buf[0] != rtrProtocolVersion {
 				errCh <- &errMsg{code: bgp.UNSUPPORTED_PROTOCOL_VERSION, data: buf}
+				continue
 			}
 			m, err := bgp.ParseRTR(buf)
 			if err != nil {
 				errCh <- &errMsg{code: bgp.INVALID_REQUEST, data: buf}
+				continue
 			}
 			msgCh <- m
 		}
@@ -198,16 +199,19 @@ LOOP:
 				go func(rrCh chan *resourceResponse, peerSN uint32) {
 					trans := mgr.BeginTransaction()
 					defer trans.EndTransaction()
-					rrCh <- &resourceResponse{
-						hasKey: trans.HasKey(peerSN),
-						sn:     trans.CurrentSerial(),
-						list:   trans.DeltaList(peerSN),
+					if trans.HasKey(peerSN) {
+						rrCh <- &resourceResponse{
+							sn:   trans.CurrentSerial(),
+							list: trans.DeltaList(peerSN),
+						}
+					} else {
+						rrCh <- nil
 					}
 				}(resourceResponseCh, peerSN)
 
 				select {
 				case rr := <-resourceResponseCh:
-					if rr.hasKey {
+					if rr != nil {
 						if err := rtr.cacheResponse(rr.sn, rr.list); err == nil {
 							continue
 						}

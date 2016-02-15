@@ -18,12 +18,13 @@ func TestMain(m *testing.M) {
 	defer os.Exit(code)
 }
 
-func prepare(content []string) *os.File {
+func prepare(content []string) (*ResourceManager, *os.File) {
 	rpslFile, _ := ioutil.TempFile(os.TempDir(), "rtr_test.db")
 	addRPSL(rpslFile, content)
 
-	go mainLoop([]string{rpslFile.Name()}, 42420, 2, false, true)
-	return rpslFile
+	mgr := NewResourceManager()
+	go mainLoop(mgr, []string{rpslFile.Name()}, 42420, 2, false, true, nil)
+	return mgr, rpslFile
 }
 
 func addRPSL(f *os.File, content []string) {
@@ -55,27 +56,106 @@ func connectRTRServer() (*rtrConn, *bufio.Scanner) {
 }
 
 func TestHandleRTR(t *testing.T) {
-	Describe(t, "handleRTR", func() {
-		var buf []byte
-		var m bgp.RTRMessage
-		var sn uint32
+	var buf []byte
+	var m bgp.RTRMessage
+	var sn uint32
+	var id uint16
 
-		initContent := []string{
-			"route:  192.168.0.0/24\n",
-			"origin: AS65000\n",
-			"source: TEST\n",
-			"\n",
-			"route6: 2001:db8::/32\n",
-			"origin: AS65000\n",
-			"source: TEST\n",
-			"\n",
-		}
-		f := prepare(initContent)
-		defer os.Remove(f.Name())
-		rtr, scanner := connectRTRServer()
+	initContent := []string{
+		"route:  192.168.0.0/24\n",
+		"origin: AS65000\n",
+		"source: TEST\n",
+		"\n",
+		"route6: 2001:db8::/32\n",
+		"origin: AS65000\n",
+		"source: TEST\n",
+		"\n",
+	}
+	mgr, f := prepare(initContent)
+	defer os.Remove(f.Name())
+	rtr, scanner := connectRTRServer()
 
-		Context("6.1. Start or Restart", func() {
-			pdu := bgp.NewRTRResetQuery()
+	Context("6.1. Start or Restart", func() {
+		pdu := bgp.NewRTRResetQuery()
+		rtr.sendPDU(pdu)
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive Cache Response PDU", func() {
+			_, ok := m.(*bgp.RTRCacheResponse)
+			Expect(ok).To(Equal, true)
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive IPv4 Prefix PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+			Expect(ok).To(Equal, true)
+			Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV4_PREFIX))
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive IPv6 Prefix PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+			Expect(ok).To(Equal, true)
+			Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV6_PREFIX))
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive End of Data PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTREndOfData)
+			id = rtrMsg.SessionID
+			sn = rtrMsg.SerialNumber
+			Expect(ok).To(Equal, true)
+		})
+	})
+
+	Context("6.2. Typical Exchange", func() {
+		Context("When its serial number is the latest", func() {
+			pdu := bgp.NewRTRSerialQuery(rtr.sessionId, sn)
+			rtr.sendPDU(pdu)
+
+			scanner.Scan()
+			buf = scanner.Bytes()
+			m, _ = bgp.ParseRTR(buf)
+			It("should receive Cache Response PDU", func() {
+				_, ok := m.(*bgp.RTRCacheResponse)
+				Expect(ok).To(Equal, true)
+			})
+
+			scanner.Scan()
+			buf = scanner.Bytes()
+			m, _ = bgp.ParseRTR(buf)
+			It("should receive End of Data PDU", func() {
+				_, ok := m.(*bgp.RTREndOfData)
+				Expect(ok).To(Equal, true)
+			})
+		})
+
+		Context("When its serial number is behind", func() {
+			updateContent := []string{
+				"route:  192.168.1.0/24\n",
+				"origin: AS65001\n",
+				"source: TEST\n",
+				"\n",
+			}
+			addRPSL(f, updateContent)
+
+			scanner.Scan()
+			buf = scanner.Bytes()
+			m, _ = bgp.ParseRTR(buf)
+			It("should receive Serial Notify PDU", func() {
+				_, ok := m.(*bgp.RTRSerialNotify)
+				Expect(ok).To(Equal, true)
+			})
+
+			pdu := bgp.NewRTRSerialQuery(rtr.sessionId, sn)
 			rtr.sendPDU(pdu)
 
 			scanner.Scan()
@@ -98,104 +178,121 @@ func TestHandleRTR(t *testing.T) {
 			scanner.Scan()
 			buf = scanner.Bytes()
 			m, _ = bgp.ParseRTR(buf)
-			It("should receive IPv6 Prefix PDU", func() {
-				rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+			It("should receive End of Data PDU", func() {
+				rtrMsg, ok := m.(*bgp.RTREndOfData)
 				Expect(ok).To(Equal, true)
-				Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV6_PREFIX))
+				id = rtrMsg.SessionID
+				sn = rtrMsg.SerialNumber
 			})
+		})
+	})
+
+	Context("6.3. No Incremental Update Available", func() {
+		pdu := bgp.NewRTRSerialQuery(id, sn-60*60*24)
+		rtr.sendPDU(pdu)
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive Cache Reset PDU", func() {
+			_, ok := m.(*bgp.RTRCacheReset)
+			Expect(ok).To(Equal, true)
+		})
+
+		pdu2 := bgp.NewRTRResetQuery()
+		rtr.sendPDU(pdu2)
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive Cache Response PDU", func() {
+			_, ok := m.(*bgp.RTRCacheResponse)
+			Expect(ok).To(Equal, true)
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive IPv4 Prefix PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+			Expect(ok).To(Equal, true)
+			Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV4_PREFIX))
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive IPv4 Prefix PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+			Expect(ok).To(Equal, true)
+			Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV4_PREFIX))
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive IPv6 Prefix PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTRIPPrefix)
+			Expect(ok).To(Equal, true)
+			Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV6_PREFIX))
+		})
+
+		scanner.Scan()
+		buf = scanner.Bytes()
+		m, _ = bgp.ParseRTR(buf)
+		It("should receive End of Data PDU", func() {
+			rtrMsg, ok := m.(*bgp.RTREndOfData)
+			Expect(ok).To(Equal, true)
+			id = rtrMsg.SessionID
+			sn = rtrMsg.SerialNumber
+		})
+	})
+
+	Context("6.4. Cache Has No Data Available", func() {
+		trans := mgr.BeginTransaction()
+		defer trans.EndTransaction()
+
+		Context("When a serial query is sent", func() {
+			pdu := bgp.NewRTRSerialQuery(id, sn)
+			rtr.sendPDU(pdu)
 
 			scanner.Scan()
 			buf = scanner.Bytes()
 			m, _ = bgp.ParseRTR(buf)
-			It("should receive End of Data PDU", func() {
-				rtrMsg, ok := m.(*bgp.RTREndOfData)
-				sn = rtrMsg.SerialNumber
+			It("should receive Error Report PDU with no data available", func() {
+				rtrMsg, ok := m.(*bgp.RTRErrorReport)
 				Expect(ok).To(Equal, true)
+				Expect(rtrMsg.ErrorCode).To(Equal, bgp.NO_DATA_AVAILABLE)
 			})
 		})
 
-		Context("6.2. Typical Exchange", func() {
-			Context("When its serial number is the latest", func() {
-				pdu := bgp.NewRTRSerialQuery(rtr.sessionId, sn)
-				rtr.sendPDU(pdu)
-
-				scanner.Scan()
-				buf = scanner.Bytes()
-				m, _ = bgp.ParseRTR(buf)
-				It("should receive Cache Response PDU", func() {
-					_, ok := m.(*bgp.RTRCacheResponse)
-					Expect(ok).To(Equal, true)
-				})
-
-				scanner.Scan()
-				buf = scanner.Bytes()
-				m, _ = bgp.ParseRTR(buf)
-				It("should receive End of Data PDU", func() {
-					_, ok := m.(*bgp.RTREndOfData)
-					Expect(ok).To(Equal, true)
-				})
-			})
-
-			Context("When its serial number is behind", func() {
-				updateContent := []string{
-					"route:  192.168.1.0/24\n",
-					"origin: AS65001\n",
-					"source: TEST\n",
-					"\n",
-				}
-				addRPSL(f, updateContent)
-
-				scanner.Scan()
-				buf = scanner.Bytes()
-				m, _ = bgp.ParseRTR(buf)
-				It("should receive Serial Notify PDU", func() {
-					_, ok := m.(*bgp.RTRSerialNotify)
-					Expect(ok).To(Equal, true)
-				})
-
-				pdu := bgp.NewRTRSerialQuery(rtr.sessionId, sn)
-				rtr.sendPDU(pdu)
-
-				scanner.Scan()
-				buf = scanner.Bytes()
-				m, _ = bgp.ParseRTR(buf)
-				It("should receive Cache Response PDU", func() {
-					_, ok := m.(*bgp.RTRCacheResponse)
-					Expect(ok).To(Equal, true)
-				})
-
-				scanner.Scan()
-				buf = scanner.Bytes()
-				m, _ = bgp.ParseRTR(buf)
-				It("should receive IPv4 Prefix PDU", func() {
-					rtrMsg, ok := m.(*bgp.RTRIPPrefix)
-					Expect(ok).To(Equal, true)
-					Expect(rtrMsg.Type).To(Equal, uint8(bgp.RTR_IPV4_PREFIX))
-				})
-
-				scanner.Scan()
-				buf = scanner.Bytes()
-				m, _ = bgp.ParseRTR(buf)
-				It("should receive End of Data PDU", func() {
-					_, ok := m.(*bgp.RTREndOfData)
-					Expect(ok).To(Equal, true)
-				})
-			})
-		})
-
-		Context("when sending PDU with unsupported version", func() {
+		Context("When a reset query is sent", func() {
 			pdu := bgp.NewRTRResetQuery()
-			pdu.Version = 1
 			rtr.sendPDU(pdu)
 
 			scanner.Scan()
-			buf := scanner.Bytes()
-			m, _ := bgp.ParseRTR(buf)
-			It("should receive Error Report PDU with unsupported protocol version", func() {
+			buf = scanner.Bytes()
+			m, _ = bgp.ParseRTR(buf)
+			It("should receive Error Report PDU with no data available", func() {
 				rtrMsg, ok := m.(*bgp.RTRErrorReport)
 				Expect(ok).To(Equal, true)
-				Expect(rtrMsg.ErrorCode).To(Equal, bgp.UNSUPPORTED_PROTOCOL_VERSION)
+				Expect(rtrMsg.ErrorCode).To(Equal, bgp.NO_DATA_AVAILABLE)
 			})
+		})
+	})
+
+	Context("Error handling", func() {
+		pdu := bgp.NewRTRResetQuery()
+		pdu.Version = 1
+		rtr.sendPDU(pdu)
+
+		scanner.Scan()
+		buf := scanner.Bytes()
+		m, _ := bgp.ParseRTR(buf)
+		It("should receive Error Report PDU with unsupported protocol version", func() {
+			rtrMsg, ok := m.(*bgp.RTRErrorReport)
+			Expect(ok).To(Equal, true)
+			Expect(rtrMsg.ErrorCode).To(Equal, bgp.UNSUPPORTED_PROTOCOL_VERSION)
 		})
 	})
 }

@@ -40,10 +40,7 @@ func checkError(err error) {
 	}
 }
 
-func mainLoop(args []string, port int, interval int, debug bool, quiet bool) {
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-
+func mainLoop(mgr *ResourceManager, args []string, port int, interval int, debug bool, quiet bool, sigCh chan os.Signal) {
 	// Set log level
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
@@ -59,7 +56,6 @@ func mainLoop(args []string, port int, interval int, debug bool, quiet bool) {
 	}
 
 	// Load IRR data
-	mgr := NewResourceManager()
 	err := mgr.Load(args)
 	checkError(err)
 
@@ -98,6 +94,9 @@ func mainLoop(args []string, port int, interval int, debug bool, quiet bool) {
 }
 
 func main() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Parse options
@@ -115,6 +114,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mainLoop(args, commandOpts.Port, interval, commandOpts.Debug, commandOpts.Quiet)
+	mgr := NewResourceManager()
+	mainLoop(mgr, args, commandOpts.Port, interval, commandOpts.Debug, commandOpts.Quiet, sigCh)
 	log.Infof("Daemon stopped")
 }
