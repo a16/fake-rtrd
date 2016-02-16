@@ -17,6 +17,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"net"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ import (
 )
 
 const rtrProtocolVersion uint8 = 0
+const chunkSizeIPPrefixMsg = 40
 
 type rtrConn struct {
 	conn       *net.TCPConn
@@ -78,24 +80,59 @@ func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
 	return nil
 }
 
+func (rtr *rtrConn) sendPDUs(msgs []bgp.RTRMessage) (int, error) {
+	pdus := make([][]byte, 0)
+	counter := 0
+	for _, msg := range msgs {
+		pdu, err := msg.Serialize()
+		if err != nil {
+			return 0, err
+		}
+		counter++
+		pdus = append(pdus, pdu)
+	}
+	_, err := rtr.conn.Write(bytes.Join(pdus, nil))
+	if err != nil {
+		return 0, err
+	}
+	return counter, nil
+}
+
+func chunkFakeROAs(list []*FakeROA, n int) chan []*FakeROA {
+	ch := make(chan []*FakeROA)
+
+	go func() {
+		for i := 0; i < len(list); i += n {
+			fromIdx := i
+			toIdx := i + n
+			if toIdx > len(list) {
+				toIdx = len(list)
+			}
+			ch <- list[fromIdx:toIdx]
+		}
+		close(ch)
+	}()
+
+	return ch
+}
+
 func (rtr *rtrConn) cacheResponse(currentSN uint32, lists FakeROATable) error {
 	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
 		return err
 	}
 	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 
-	var counter uint32
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		for _, flag := range []uint8{bgp.ANNOUNCEMENT, bgp.WITHDRAWAL} {
-			counter = 0
-			for _, v := range lists[rf][flag] {
-				if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)); err != nil {
+			msgs := make([]bgp.RTRMessage, 0)
+			for roas := range chunkFakeROAs(lists[rf][flag], chunkSizeIPPrefixMsg) {
+				for _, v := range roas {
+					msgs = append(msgs, bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag))
+				}
+				counter, err := rtr.sendPDUs(msgs)
+				if err != nil {
 					return err
 				}
-				counter++
-				log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: %v)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)
-			}
-			if !commandOpts.Debug && counter != 0 {
 				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), rtr.remoteAddr, counter, flag)
 			}
 		}
