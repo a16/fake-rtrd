@@ -133,7 +133,7 @@ func (rtr *rtrConn) cacheResponse(currentSN uint32, lists FakeROATable) error {
 				if err != nil {
 					return err
 				}
-				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), rtr.remoteAddr, counter, flag)
+				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", strings.Split(rf.String(), "_")[1], rtr.remoteAddr, counter, flag)
 			}
 		}
 	}
@@ -162,10 +162,6 @@ func (rtr *rtrConn) cacheHasNoDataAvailable() error {
 	log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, bgp.NO_DATA_AVAILABLE)
 
 	return nil
-}
-
-func RFToIPVer(rf bgp.RouteFamily) string {
-	return strings.Split(rf.String(), "_")[1]
 }
 
 type errMsg struct {
