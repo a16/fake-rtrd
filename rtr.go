@@ -71,9 +71,9 @@ func (s *rtrServer) run() {
 	}
 }
 
-func (rtr *rtrConn) sendPDU(pdu bgp.RTRMessage) error {
-	data, _ := pdu.Serialize()
-	_, err := rtr.conn.Write(data)
+func (rtr *rtrConn) sendPDU(msg bgp.RTRMessage) error {
+	pdu, _ := msg.Serialize()
+	_, err := rtr.conn.Write(pdu)
 	if err != nil {
 		return err
 	}
