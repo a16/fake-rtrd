@@ -84,19 +84,17 @@ func (rtr *rtrConn) cacheResponse(currentSN uint32, lists FakeROATable) error {
 	}
 	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
 
-	var counter uint32
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
 		for _, flag := range []uint8{bgp.ANNOUNCEMENT, bgp.WITHDRAWAL} {
-			counter = 0
 			for _, v := range lists[rf][flag] {
 				if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)); err != nil {
 					return err
 				}
-				counter++
 				log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: %v)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)
 			}
-			if !commandOpts.Debug && counter != 0 {
-				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), rtr.remoteAddr, counter, flag)
+			prefixes := len(lists[rf][flag])
+			if !commandOpts.Debug && prefixes != 0 {
+				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), rtr.remoteAddr, prefixes, flag)
 			}
 		}
 	}
