@@ -105,6 +105,8 @@ func main() {
 	parser.Usage = "[OPTIONS] [RPSLFILES]..."
 	args, err := parser.Parse()
 	if err != nil {
+		log.Errorf("%v", err)
+		parser.WriteHelp(os.Stdout)
 		os.Exit(1)
 	}
 
@@ -112,6 +114,8 @@ func main() {
 	if commandOpts.Interval >= 1 && commandOpts.Interval <= 59 {
 		interval = commandOpts.Interval
 	} else {
+		log.Errorf("interval value must be between 1 and 59.")
+		parser.WriteHelp(os.Stdout)
 		os.Exit(1)
 	}
 
