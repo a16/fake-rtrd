@@ -27,10 +27,10 @@ import (
 )
 
 var commandOpts struct {
-	Debug    bool `short:"d" long:"debug" default:"false" description:"Show verbose debug information"`
+	Debug    bool `short:"d" long:"debug" description:"Show verbose debug information"`
 	Interval int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
 	Port     int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
-	Quiet    bool `short:"q" long:"quiet" default:"false" description:"Quiet mode"`
+	Quiet    bool `short:"q" long:"quiet" description:"Quiet mode"`
 }
 
 func checkError(err error) {
