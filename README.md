@@ -27,8 +27,8 @@ Help Options:
   -h, --help      Show this help message
 ```
 
-First, you should prepare a RPSL file. At least, route(6) field, origin field, and source field are required in a object.
-Let's say its name is ```test.db```.
+First, you need to prepare a RPSL file. At least, route(6) field, origin field, and source field are required in a object.
+Let's say its file name is ```test.db```.
 
 ```bash
 route: 210.173.160.0/19
@@ -41,7 +41,7 @@ source: TEST
 
 ```
 
-Then run the following command.
+Then type the following command to run fake-rtrd.
 
 ```bash
 % sudo fake-rtrd test.db
