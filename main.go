@@ -42,10 +42,6 @@ func checkError(err error) {
 
 func mainLoop(mgr *ResourceManager, args []string, port int, interval int, debug bool, quiet bool, sigCh chan os.Signal) {
 	// Set log level
-	log.SetFormatter(&log.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: "2006/01/02 15:04:05",
-	})
 	if quiet {
 		log.SetLevel(log.FatalLevel)
 	} else {
@@ -98,6 +94,11 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	log.SetFormatter(&log.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: "2006/01/02 15:04:05",
+	})
 
 	// Parse options
 	parser := flags.NewParser(&commandOpts, flags.Default)
