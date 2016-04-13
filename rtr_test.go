@@ -300,20 +300,20 @@ func TestHandleRTR(t *testing.T) {
 
 func TestRFToIPVer(t *testing.T) {
 	Context("with bgp.RF_IPv4_UC", func() {
-		It("should convert to \"4\"", func() {
-			Expect(RFToIPVer(bgp.RF_IPv4_UC)).To(Equal, "4")
+		It("should convert to \"IPv4\"", func() {
+			Expect(RFToIPVer(bgp.RF_IPv4_UC)).To(Equal, "IPv4")
 		})
 	})
 
 	Context("with bgp.RF_IPv6_UC", func() {
-		It("should convert to \"6\"", func() {
-			Expect(RFToIPVer(bgp.RF_IPv6_UC)).To(Equal, "6")
+		It("should convert to \"IPv6\"", func() {
+			Expect(RFToIPVer(bgp.RF_IPv6_UC)).To(Equal, "IPv6")
 		})
 	})
 
 	Context("with unsupported RouteFamily", func() {
-		It("should convert to \"?\"", func() {
-			Expect(RFToIPVer(bgp.RF_EVPN)).To(Equal, "?")
+		It("should convert to \"Unsupported\"", func() {
+			Expect(RFToIPVer(bgp.RF_EVPN)).To(Equal, "Unsupported")
 		})
 	})
 }

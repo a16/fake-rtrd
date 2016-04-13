@@ -128,11 +128,11 @@ func (r *rtrConn) cacheHasNoDataAvailable() error {
 func RFToIPVer(rf bgp.RouteFamily) string {
 	switch rf {
 	case bgp.RF_IPv4_UC:
-		return "4"
+		return "IPv4"
 	case bgp.RF_IPv6_UC:
-		return "6"
+		return "IPv6"
 	default:
-		return "?"
+		return "Unsupported"
 	}
 }
 
