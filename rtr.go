@@ -19,11 +19,11 @@ import (
 	"bufio"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
-	"github.com/osrg/gobgp/packet"
+	"github.com/osrg/gobgp/packet/bgp"
+	"github.com/osrg/gobgp/packet/rtr"
 )
 
 const rtrProtocolVersion uint8 = 0
@@ -69,64 +69,71 @@ func (s *rtrServer) run() {
 	}
 }
 
-func (rtr *rtrConn) sendPDU(msg bgp.RTRMessage) error {
+func (r *rtrConn) sendPDU(msg rtr.RTRMessage) error {
 	pdu, _ := msg.Serialize()
-	_, err := rtr.conn.Write(pdu)
+	_, err := r.conn.Write(pdu)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (rtr *rtrConn) cacheResponse(currentSN uint32, lists FakeROATable) error {
-	if err := rtr.sendPDU(bgp.NewRTRCacheResponse(rtr.sessionId)); err != nil {
+func (r *rtrConn) cacheResponse(currentSN uint32, lists FakeROATable) error {
+	if err := r.sendPDU(rtr.NewRTRCacheResponse(r.sessionId)); err != nil {
 		return err
 	}
-	log.Infof("Sent Cache Response PDU to %v (ID: %v)", rtr.remoteAddr, rtr.sessionId)
+	log.Infof("Sent Cache Response PDU to %v (ID: %v)", r.remoteAddr, r.sessionId)
 
 	for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
-		for _, flag := range []uint8{bgp.ANNOUNCEMENT, bgp.WITHDRAWAL} {
+		for _, flag := range []uint8{rtr.ANNOUNCEMENT, rtr.WITHDRAWAL} {
 			for _, v := range lists[rf][flag] {
-				if err := rtr.sendPDU(bgp.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)); err != nil {
+				if err := r.sendPDU(rtr.NewRTRIPPrefix(v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)); err != nil {
 					return err
 				}
-				log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: %v)", RFToIPVer(rf), rtr.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)
+				log.Debugf("Sent %s Prefix PDU to %v (Prefix: %v/%v, Maxlen: %v, AS: %v, flags: %v)", RFToIPVer(rf), r.remoteAddr, v.Prefix, v.PrefixLen, v.MaxLen, v.AS, flag)
 			}
 			prefixes := len(lists[rf][flag])
 			if !commandOpts.Debug && prefixes != 0 {
-				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), rtr.remoteAddr, prefixes, flag)
+				log.Infof("Sent %s Prefix PDU(s) to %v (%d ROA(s), flags: %v)", RFToIPVer(rf), r.remoteAddr, prefixes, flag)
 			}
 		}
 	}
 
-	if err := rtr.sendPDU(bgp.NewRTREndOfData(rtr.sessionId, currentSN)); err != nil {
+	if err := r.sendPDU(rtr.NewRTREndOfData(r.sessionId, currentSN)); err != nil {
 		return err
 	}
-	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, currentSN)
+	log.Infof("Sent End of Data PDU to %v (ID: %v, SN: %v)", r.remoteAddr, r.sessionId, currentSN)
 
 	return nil
 }
 
-func (rtr *rtrConn) noIncrementalUpdateAvailable() error {
-	if err := rtr.sendPDU(bgp.NewRTRCacheReset()); err != nil {
+func (r *rtrConn) noIncrementalUpdateAvailable() error {
+	if err := r.sendPDU(rtr.NewRTRCacheReset()); err != nil {
 		return err
 	}
-	log.Infof("Sent Cache Reset PDU to %v", rtr.remoteAddr)
+	log.Infof("Sent Cache Reset PDU to %v", r.remoteAddr)
 
 	return nil
 }
 
-func (rtr *rtrConn) cacheHasNoDataAvailable() error {
-	if err := rtr.sendPDU(bgp.NewRTRErrorReport(bgp.NO_DATA_AVAILABLE, nil, nil)); err != nil {
+func (r *rtrConn) cacheHasNoDataAvailable() error {
+	if err := r.sendPDU(rtr.NewRTRErrorReport(rtr.NO_DATA_AVAILABLE, nil, nil)); err != nil {
 		return err
 	}
-	log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, bgp.NO_DATA_AVAILABLE)
+	log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", r.remoteAddr, r.sessionId, rtr.NO_DATA_AVAILABLE)
 
 	return nil
 }
 
 func RFToIPVer(rf bgp.RouteFamily) string {
-	return strings.Split(rf.String(), "_")[1]
+	switch rf {
+	case bgp.RF_IPv4_UC:
+		return "4"
+	case bgp.RF_IPv6_UC:
+		return "6"
+	default:
+		return "?"
+	}
 }
 
 type errMsg struct {
@@ -139,28 +146,28 @@ type resourceResponse struct {
 	list FakeROATable
 }
 
-func handleRTR(rtr *rtrConn, mgr *ResourceManager) {
+func handleRTR(r *rtrConn, mgr *ResourceManager) {
 	bcastReceiver := mgr.serialNotify.Join()
-	scanner := bufio.NewScanner(bufio.NewReader(rtr.conn))
-	scanner.Split(bgp.SplitRTR)
+	scanner := bufio.NewScanner(bufio.NewReader(r.conn))
+	scanner.Split(rtr.SplitRTR)
 
-	msgCh := make(chan bgp.RTRMessage, 1)
+	msgCh := make(chan rtr.RTRMessage, 1)
 	errCh := make(chan *errMsg, 1)
 	go func() {
 		defer func() {
-			log.Infof("Connection to %v was closed. (ID: %v)", rtr.remoteAddr, rtr.sessionId)
-			rtr.conn.Close()
+			log.Infof("Connection to %v was closed. (ID: %v)", r.remoteAddr, r.sessionId)
+			r.conn.Close()
 		}()
 
 		for scanner.Scan() {
 			buf := scanner.Bytes()
 			if buf[0] != rtrProtocolVersion {
-				errCh <- &errMsg{code: bgp.UNSUPPORTED_PROTOCOL_VERSION, data: buf}
+				errCh <- &errMsg{code: rtr.UNSUPPORTED_PROTOCOL_VERSION, data: buf}
 				continue
 			}
-			m, err := bgp.ParseRTR(buf)
+			m, err := rtr.ParseRTR(buf)
 			if err != nil {
-				errCh <- &errMsg{code: bgp.INVALID_REQUEST, data: buf}
+				errCh <- &errMsg{code: rtr.INVALID_REQUEST, data: buf}
 				continue
 			}
 			msgCh <- m
@@ -172,19 +179,19 @@ LOOP:
 		select {
 		case <-bcastReceiver.In:
 			currentSN := mgr.CurrentSerial()
-			if err := rtr.sendPDU(bgp.NewRTRSerialNotify(rtr.sessionId, currentSN)); err != nil {
+			if err := r.sendPDU(rtr.NewRTRSerialNotify(r.sessionId, currentSN)); err != nil {
 				break LOOP
 			}
-			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", rtr.remoteAddr, rtr.sessionId, currentSN)
+			log.Infof("Sent Serial Notify PDU to %v (ID: %v, SN: %v)", r.remoteAddr, r.sessionId, currentSN)
 		case msg := <-errCh:
-			rtr.sendPDU(bgp.NewRTRErrorReport(msg.code, msg.data, nil))
-			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", rtr.remoteAddr, rtr.sessionId, msg.code)
+			r.sendPDU(rtr.NewRTRErrorReport(msg.code, msg.data, nil))
+			log.Infof("Sent Error Report PDU to %v (ID: %v, ErrorCode: %v)", r.remoteAddr, r.sessionId, msg.code)
 			return
 		case m := <-msgCh:
 			switch msg := m.(type) {
-			case *bgp.RTRSerialQuery:
+			case *rtr.RTRSerialQuery:
 				peerSN := msg.SerialNumber
-				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", rtr.remoteAddr, msg.SessionID, peerSN)
+				log.Infof("Received Serial Query PDU from %v (ID: %v, SN: %d)", r.remoteAddr, msg.SessionID, peerSN)
 
 				timeoutCh := make(chan bool, 1)
 				resourceResponseCh := make(chan *resourceResponse, 1)
@@ -210,22 +217,22 @@ LOOP:
 				select {
 				case rr := <-resourceResponseCh:
 					if rr != nil {
-						if err := rtr.cacheResponse(rr.sn, rr.list); err == nil {
+						if err := r.cacheResponse(rr.sn, rr.list); err == nil {
 							continue
 						}
 					} else {
-						if err := rtr.noIncrementalUpdateAvailable(); err == nil {
+						if err := r.noIncrementalUpdateAvailable(); err == nil {
 							continue
 						}
 					}
 				case <-timeoutCh:
-					if err := rtr.cacheHasNoDataAvailable(); err == nil {
+					if err := r.cacheHasNoDataAvailable(); err == nil {
 						continue
 					}
 				}
 				break LOOP
-			case *bgp.RTRResetQuery:
-				log.Infof("Received Reset Query PDU from %v", rtr.remoteAddr)
+			case *rtr.RTRResetQuery:
+				log.Infof("Received Reset Query PDU from %v", r.remoteAddr)
 
 				timeoutCh := make(chan bool, 1)
 				resourceResponseCh := make(chan *resourceResponse, 1)
@@ -246,27 +253,27 @@ LOOP:
 
 				select {
 				case rr := <-resourceResponseCh:
-					if err := rtr.cacheResponse(rr.sn, rr.list); err == nil {
+					if err := r.cacheResponse(rr.sn, rr.list); err == nil {
 						continue
 					}
 				case <-timeoutCh:
-					if err := rtr.cacheHasNoDataAvailable(); err == nil {
+					if err := r.cacheHasNoDataAvailable(); err == nil {
 						continue
 					}
 				}
 
 				break LOOP
-			case *bgp.RTRErrorReport:
-				log.Warnf("Received Error Report PDU from %v (%#v)", rtr.remoteAddr, msg)
+			case *rtr.RTRErrorReport:
+				log.Warnf("Received Error Report PDU from %v (%#v)", r.remoteAddr, msg)
 				return
 			default:
 				pdu, _ := msg.Serialize()
-				log.Warnf("Received unsupported PDU (type %d) from %v (%#v)", pdu[1], rtr.remoteAddr, msg)
-				rtr.sendPDU(bgp.NewRTRErrorReport(bgp.UNSUPPORTED_PDU_TYPE, pdu, nil))
+				log.Warnf("Received unsupported PDU (type %d) from %v (%#v)", pdu[1], r.remoteAddr, msg)
+				r.sendPDU(rtr.NewRTRErrorReport(rtr.UNSUPPORTED_PDU_TYPE, pdu, nil))
 				return
 			}
 		}
 	}
-	rtr.sendPDU(bgp.NewRTRErrorReport(bgp.INTERNAL_ERROR, nil, nil))
+	r.sendPDU(rtr.NewRTRErrorReport(rtr.INTERNAL_ERROR, nil, nil))
 	return
 }

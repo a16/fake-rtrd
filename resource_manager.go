@@ -28,7 +28,8 @@ import (
 	"github.com/armon/go-radix"
 	set "github.com/deckarep/golang-set"
 	"github.com/grafov/bcast"
-	"github.com/osrg/gobgp/packet"
+	"github.com/osrg/gobgp/packet/bgp"
+	"github.com/osrg/gobgp/packet/rtr"
 )
 
 const (
@@ -190,8 +191,8 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 				bgp.RF_IPv6_UC: map[uint8][]*FakeROA{},
 			}
 
-			lists[bgp.RF_IPv4_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]))
-			lists[bgp.RF_IPv6_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]))
+			lists[bgp.RF_IPv4_UC][rtr.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]))
+			lists[bgp.RF_IPv6_UC][rtr.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]))
 
 			req.Response <- &Response{Data: lists}
 		case REQ_DELTA_LIST:
@@ -201,10 +202,10 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 				bgp.RF_IPv6_UC: map[uint8][]*FakeROA{},
 			}
 
-			lists[bgp.RF_IPv4_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv4_UC])))
-			lists[bgp.RF_IPv6_UC][bgp.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv6_UC])))
-			lists[bgp.RF_IPv4_UC][bgp.WITHDRAWAL] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC])))
-			lists[bgp.RF_IPv6_UC][bgp.WITHDRAWAL] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC])))
+			lists[bgp.RF_IPv4_UC][rtr.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv4_UC])))
+			lists[bgp.RF_IPv6_UC][rtr.ANNOUNCEMENT] = fakeROALists(rsrc, treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[k][bgp.RF_IPv6_UC])))
+			lists[bgp.RF_IPv4_UC][rtr.WITHDRAWAL] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv4_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv4_UC])))
+			lists[bgp.RF_IPv6_UC][rtr.WITHDRAWAL] = fakeROALists(rsrc, treeToSet(rsrc.table[k][bgp.RF_IPv6_UC]).Difference(treeToSet(rsrc.table[rsrc.currentSN][bgp.RF_IPv6_UC])))
 
 			req.Response <- &Response{Data: lists}
 		case REQ_IF_SERIAL_EXISTS:
