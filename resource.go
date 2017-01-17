@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/a16/go-rpsl"
 	"github.com/armon/go-radix"
+	"github.com/martinolsen/go-rpsl"
 	"github.com/osrg/gobgp/packet/bgp"
 )
 
