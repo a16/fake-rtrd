@@ -18,6 +18,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -81,14 +82,21 @@ func NewResourceManager() *ResourceManager {
 	}
 }
 
-func (mgr *ResourceManager) Load(files []string) error {
+func (mgr *ResourceManager) Load(args []string) error {
 	mgr.init.Do(func() {
 		go mgr.serialNotify.Broadcasting(0)
 		mgr.ch = make(chan Request)
 		go mgr.run()
 	})
 	result := make(chan *Response)
-	mgr.ch <- Request{RequestType: REQ_LOAD, Key: files, Response: result}
+	extracted_files := []string{}
+	for _, arg := range args {
+		files, _ := filepath.Glob(arg)
+		for _, f := range files {
+			extracted_files = append(extracted_files, f)
+		}
+	}
+	mgr.ch <- Request{RequestType: REQ_LOAD, Key: extracted_files, Response: result}
 	res := <-result
 	return res.Error
 }
