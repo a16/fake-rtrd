@@ -177,7 +177,7 @@ func handleRTR(r *rtrConn, mgr *ResourceManager) {
 LOOP:
 	for {
 		select {
-		case <-bcastReceiver.In:
+		case <-bcastReceiver.Read:
 			currentSN := mgr.CurrentSerial()
 			if err := r.sendPDU(rtr.NewRTRSerialNotify(r.sessionId, currentSN)); err != nil {
 				break LOOP
