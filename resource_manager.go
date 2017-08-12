@@ -84,7 +84,7 @@ func NewResourceManager() *ResourceManager {
 
 func (mgr *ResourceManager) Load(args []string) error {
 	mgr.init.Do(func() {
-		go mgr.serialNotify.Broadcasting(0)
+		go mgr.serialNotify.Broadcast(0)
 		mgr.ch = make(chan Request)
 		go mgr.run()
 	})
