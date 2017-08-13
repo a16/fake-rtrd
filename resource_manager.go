@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/armon/go-radix"
 	set "github.com/deckarep/golang-set"
 	"github.com/grafov/bcast"
 	"github.com/osrg/gobgp/packet/bgp"
 	"github.com/osrg/gobgp/packet/rtr"
+	log "github.com/sirupsen/logrus"
 )
 
 const (
