@@ -21,9 +21,9 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/osrg/gobgp/packet/bgp"
 	"github.com/osrg/gobgp/packet/rtr"
+	log "github.com/sirupsen/logrus"
 )
 
 const rtrProtocolVersion uint8 = 0
