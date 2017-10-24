@@ -72,12 +72,14 @@ type Response struct {
 type ResourceManager struct {
 	ch           chan Request
 	serialNotify *bcast.Group
+	useMaxLen    bool
 	init         sync.Once
 }
 
-func NewResourceManager() *ResourceManager {
+func NewResourceManager(useMaxLen bool) *ResourceManager {
 	return &ResourceManager{
 		ch:           make(chan Request),
+		useMaxLen:    useMaxLen,
 		serialNotify: bcast.NewGroup(),
 	}
 }
@@ -157,7 +159,7 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 		req := <-mgr.ch
 		switch req.RequestType {
 		case REQ_LOAD:
-			rsrc, err = newResource(req.Key.([]string))
+			rsrc, err = newResource(req.Key.([]string), mgr.useMaxLen)
 			log.Infof("Resource has been loaded. (SN: %v)", rsrc.currentSN)
 			req.Response <- &Response{Error: err}
 		case REQ_CURRENT_SERIAL:
