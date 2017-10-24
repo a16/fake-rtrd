@@ -46,12 +46,14 @@ type resource struct {
 	files     []string
 	currentSN uint32
 	table     map[uint32]map[bgp.RouteFamily]*radix.Tree
+	useMaxLen bool
 }
 
-func newResource(files []string) (*resource, error) {
+func newResource(files []string, useMaxLen bool) (*resource, error) {
 	rsrc := &resource{
-		files: files,
-		table: make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
+		files:     files,
+		table:     make(map[uint32]map[bgp.RouteFamily]*radix.Tree),
+		useMaxLen: useMaxLen,
 	}
 
 	rsrc.currentSN = uint32(time.Now().Unix())
@@ -106,14 +108,12 @@ func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource,
 				sn,
 				object.Get("origin"),
 				object.Get("route"),
-				uint8(net.IPv4len*8),
 			)
 		case "route6":
 			rsrc, err = rsrc.addValidInfo(
 				sn,
 				object.Get("origin"),
 				object.Get("route6"),
-				uint8(net.IPv6len*8),
 			)
 		}
 		if err != nil {
@@ -123,7 +123,7 @@ func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource,
 	return rsrc, nil
 }
 
-func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, maxLen uint8) (*resource, error) {
+func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string) (*resource, error) {
 	a, _ := strconv.ParseUint(strings.TrimLeft(as, "AS"), 10, 32)
 	rf, n, maxLen, err := parseCIDR(prefix)
 	if err != nil {
@@ -132,6 +132,9 @@ func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, maxLen u
 	addr := n.IP
 	m, _ := n.Mask.Size()
 	prefixLen := uint8(m)
+	if !rsrc.useMaxLen {
+		maxLen = prefixLen
+	}
 
 	key := func() string {
 		var buf1 []byte

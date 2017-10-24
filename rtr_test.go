@@ -23,7 +23,7 @@ func prepare(content []string) (*ResourceManager, *os.File) {
 	rpslFile, _ := ioutil.TempFile(os.TempDir(), "rtr_test.db")
 	addRPSL(rpslFile, content)
 
-	mgr := NewResourceManager()
+	mgr := NewResourceManager(false)
 	go mainLoop(mgr, []string{rpslFile.Name()}, 42420, 2, false, true, nil)
 	return mgr, rpslFile
 }
