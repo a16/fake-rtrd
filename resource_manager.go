@@ -28,8 +28,8 @@ import (
 	"github.com/armon/go-radix"
 	set "github.com/deckarep/golang-set"
 	"github.com/grafov/bcast"
-	"github.com/osrg/gobgp/packet/bgp"
-	"github.com/osrg/gobgp/packet/rtr"
+	"github.com/osrg/gobgp/pkg/packet/bgp"
+	"github.com/osrg/gobgp/pkg/packet/rtr"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -86,7 +86,7 @@ func NewResourceManager(useMaxLen bool) *ResourceManager {
 
 func (mgr *ResourceManager) Load(args []string) error {
 	mgr.init.Do(func() {
-		go mgr.serialNotify.Broadcast(0)
+		go mgr.serialNotify.Broadcast()
 		mgr.ch = make(chan Request)
 		go mgr.run()
 	})

@@ -21,8 +21,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/osrg/gobgp/packet/bgp"
-	"github.com/osrg/gobgp/packet/rtr"
+	"github.com/osrg/gobgp/pkg/packet/bgp"
+	"github.com/osrg/gobgp/pkg/packet/rtr"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -177,7 +177,7 @@ func handleRTR(r *rtrConn, mgr *ResourceManager) {
 LOOP:
 	for {
 		select {
-		case <-bcastReceiver.Read:
+		case <-bcastReceiver.In:
 			currentSN := mgr.CurrentSerial()
 			if err := r.sendPDU(rtr.NewRTRSerialNotify(r.sessionId, currentSN)); err != nil {
 				break LOOP

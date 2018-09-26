@@ -28,7 +28,7 @@ import (
 
 	"github.com/armon/go-radix"
 	"github.com/martinolsen/go-rpsl"
-	"github.com/osrg/gobgp/packet/bgp"
+	"github.com/osrg/gobgp/pkg/packet/bgp"
 )
 
 type subResource struct {
