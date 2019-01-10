@@ -16,7 +16,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -28,7 +27,6 @@ import (
 
 var commandOpts struct {
 	Debug     bool `short:"d" long:"debug" description:"Show verbose debug information"`
-	Interval  int  `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
 	UseMaxLen bool `short:"m" long:"maxlen" description:"Use 32 or 128 as MaxLen value, 32 for IPv4, 128 for IPv6. By default(=false), use the same length to the prefix length"`
 	Port      int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
 	Quiet     bool `short:"q" long:"quiet" description:"Quiet mode"`
@@ -41,7 +39,7 @@ func checkError(err error) {
 	}
 }
 
-func mainLoop(mgr *ResourceManager, args []string, port int, interval int, debug bool, quiet bool, sigCh chan os.Signal) {
+func mainLoop(mgr *ResourceManager, args []string, port int, debug bool, quiet bool, sigCh chan os.Signal) {
 	// Set log level
 	if quiet {
 		log.SetLevel(log.FatalLevel)
@@ -60,21 +58,13 @@ func mainLoop(mgr *ResourceManager, args []string, port int, interval int, debug
 	rtrServer := newRTRServer(port)
 	go rtrServer.run()
 	log.Infof("Daemon started")
-
-	// cron for managing time
-	alarmCh := make(chan bool)
-	cronSpec := fmt.Sprintf("0 */%d * * * *", interval)
-	go timeKeeper(alarmCh, cronSpec)
+	defer log.Infof("Daemon stopped")
 
 	for {
 		select {
 		case conn := <-rtrServer.connCh:
 			log.Infof("Accepted a new connection from %v", conn.remoteAddr)
 			go handleRTR(conn, mgr)
-		case <-alarmCh:
-			log.Infof("Alarm triggered")
-			err := mgr.Reload()
-			checkError(err)
 		case sig := <-sigCh:
 			{
 				switch sig {
@@ -111,16 +101,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	var interval int
-	if commandOpts.Interval >= 1 && commandOpts.Interval <= 59 {
-		interval = commandOpts.Interval
-	} else {
-		log.Errorf("interval value must be between 1 and 59.")
-		parser.WriteHelp(os.Stdout)
-		os.Exit(1)
-	}
-
 	mgr := NewResourceManager(commandOpts.UseMaxLen)
-	mainLoop(mgr, args, commandOpts.Port, interval, commandOpts.Debug, commandOpts.Quiet, sigCh)
-	log.Infof("Daemon stopped")
+	mainLoop(mgr, args, commandOpts.Port, commandOpts.Debug, commandOpts.Quiet, sigCh)
 }
