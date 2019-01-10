@@ -170,6 +170,7 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 			rsrc, err = rsrc.loadAs(nextSN)
 			if err != nil {
 				req.Response <- &Response{Error: err}
+				log.Errorf("Could not load:", err)
 				break
 			}
 
