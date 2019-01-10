@@ -16,6 +16,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -25,11 +26,23 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+var version string
+
 var commandOpts struct {
-	Debug     bool `short:"d" long:"debug" description:"Show verbose debug information"`
-	UseMaxLen bool `short:"m" long:"maxlen" description:"Use 32 or 128 as MaxLen value, 32 for IPv4, 128 for IPv6. By default(=false), use the same length to the prefix length"`
-	Port      int  `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
-	Quiet     bool `short:"q" long:"quiet" description:"Quiet mode"`
+	Debug     bool   `short:"d" long:"debug" description:"Show verbose debug information"`
+	UseMaxLen bool   `short:"m" long:"maxlen" description:"Use 32 or 128 as MaxLen value, 32 for IPv4, 128 for IPv6. By default(=false), use the same length to the prefix length"`
+	Port      int    `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
+	Quiet     bool   `short:"q" long:"quiet" description:"Quiet mode"`
+	Version   func() `short:"v" long:"version" description:"Show version"`
+}
+
+func init() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+
+	commandOpts.Version = func() {
+		fmt.Println(version)
+		os.Exit(0)
+	}
 }
 
 func checkError(err error) {
@@ -83,8 +96,6 @@ func mainLoop(mgr *ResourceManager, args []string, port int, debug bool, quiet b
 func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-
-	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	log.SetFormatter(&log.TextFormatter{
 		FullTimestamp:   true,
