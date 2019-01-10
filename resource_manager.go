@@ -174,6 +174,9 @@ func handleRequests(mgr *ResourceManager, rsrc *resource) {
 				break
 			}
 
+			for _, rf := range []bgp.RouteFamily{bgp.RF_IPv4_UC, bgp.RF_IPv6_UC} {
+				log.Debugf("%v current table size is %v, next table size is %v.", rf, rsrc.table[rsrc.currentSN][rf].Len(), rsrc.table[nextSN][rf].Len())
+			}
 			if eql := reflect.DeepEqual(rsrc.table[rsrc.currentSN], rsrc.table[nextSN]); !eql {
 				log.Infof("Resource has been updated. (SN: %v -> %v)", rsrc.currentSN, nextSN)
 				rsrc.currentSN = nextSN
