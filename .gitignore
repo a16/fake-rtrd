@@ -8,6 +8,7 @@ _obj
 _test
 vendor
 
+
 # Architecture specific extensions/prefixes
 *.[568vq]
 [568vq].out
@@ -25,3 +26,5 @@ _testmain.go
 *.prof
 
 tmp/*
+
+.go-version
