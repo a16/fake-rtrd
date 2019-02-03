@@ -34,12 +34,12 @@
   version = "v1.4.0"
 
 [[projects]]
-  branch = "master"
-  digest = "1:f44d34fda864bed6d6c71514cd40b2ee097e6e67f745d5d014113e1faa5af8b7"
+  digest = "1:0a69a1c0db3591fcefb47f115b224592c8dfa4368b7ba9fae509d5e16cdc95c8"
   name = "github.com/konsorten/go-windows-terminal-sequences"
   packages = ["."]
   pruneopts = "UT"
-  revision = "b729f2633dfe35f4d1d8a32385f6685610ce1cb5"
+  revision = "5c8c8bd35d3832f5d134ae1e1e375b69a4d25242"
+  version = "v1.0.1"
 
 [[projects]]
   branch = "master"
@@ -51,14 +51,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:3337486971990eac6c348f389e15331f1a58d57e33c6a48016a6f3a6446404fb"
+  digest = "1:5373fc4d32ca2bca930e40a3a6049eba19f2ce6176b5bcd9e6e855a45d617975"
   name = "github.com/osrg/gobgp"
   packages = [
     "pkg/packet/bgp",
     "pkg/packet/rtr",
   ]
   pruneopts = "UT"
-  revision = "94e70ba60afa615e0e0c031427e13ca7c34a1760"
+  revision = "f17772298e30146aad394dc7bfb8bb0f56cc9889"
 
 [[projects]]
   branch = "master"
@@ -77,31 +77,31 @@
   version = "v1.1"
 
 [[projects]]
-  digest = "1:dc2d85c13ac22c22a1f3170a41a8e1b897fa05134aaf533f16df44f66a25b4a1"
+  digest = "1:87c2e02fb01c27060ccc5ba7c5a407cc91147726f8f40b70cceeedbc52b1f3a8"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
   pruneopts = "UT"
-  revision = "a67f783a3814b8729bd2dac5780b5f78f8dbd64d"
-  version = "v1.1.0"
+  revision = "e1e72e9de974bd926e5c56f83753fba2df402ce5"
+  version = "v1.3.0"
 
 [[projects]]
   branch = "master"
-  digest = "1:3f3a05ae0b95893d90b9b3b5afdb79a9b3d96e4e36e099d841ae602e4aca0da8"
+  digest = "1:fde12c4da6237363bf36b81b59aa36a43d28061167ec4acb0d41fc49464e28b9"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
   pruneopts = "UT"
-  revision = "0e37d006457bf46f9e6692014ba72ef82c33022c"
+  revision = "b8fe1690c61389d7d2a8074a507d1d40c5d30448"
 
 [[projects]]
   branch = "master"
-  digest = "1:6fb1dd382722f93fcf7c52ff631f7b899d8c5d54314d88d42dd1f4e5ac404a30"
+  digest = "1:653cc9ff57cf744d21f74e811af4f330415284bfc291d28f716833618c02c876"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "UT"
-  revision = "2f1df4e56cdeb503a08d8577e6f1a7eb12efab82"
+  revision = "7ae0202eb74c2b534255c71b5a15fa4115aabbcc"
 
 [solve-meta]
   analyzer-name = "dep"
