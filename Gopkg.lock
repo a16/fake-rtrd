@@ -69,6 +69,14 @@
   revision = "d575dd12c2eb84612ae5c84fab56ccb4ce156a1e"
 
 [[projects]]
+  digest = "1:ed615c5430ecabbb0fb7629a182da65ecee6523900ac1ac932520860878ffcad"
+  name = "github.com/robfig/cron"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "b41be1df696709bb6395fe435af20370037c0b4c"
+  version = "v1.1"
+
+[[projects]]
   digest = "1:dc2d85c13ac22c22a1f3170a41a8e1b897fa05134aaf533f16df44f66a25b4a1"
   name = "github.com/sirupsen/logrus"
   packages = ["."]
@@ -107,6 +115,7 @@
     "github.com/osrg/gobgp/pkg/packet/bgp",
     "github.com/osrg/gobgp/pkg/packet/rtr",
     "github.com/r7kamura/gospel",
+    "github.com/robfig/cron",
     "github.com/sirupsen/logrus",
   ]
   solver-name = "gps-cdcl"

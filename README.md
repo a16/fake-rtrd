@@ -19,6 +19,7 @@ Usage:
 
 Application Options:
   -d, --debug     Show verbose debug information (default: false)
+  -i, --interval= Specify interval(1-59 min) for reloading pseudo ROA table (default: 5)
   -p, --port=     Specify listen port for RTR (default: 323)
   -q, --quiet     Quiet mode (default: false)
 
@@ -46,13 +47,13 @@ Then type the following command to run fake-rtrd.
 % sudo fake-rtrd test.db
 ```
 
-By default, file is reloaded when SIGHUP signal received. It'll send Serial Notify to clients.
+By default, file is reloaded every 5 minutes. It'll send Serial Notify to clients when you updated it.
 
 If you want to load it from IRRd continuously, add commands like below and run ```fake-rtrd```
 
 ```bash
 % crontab -e
-*/5 * * * * wget -q -O - ftp://ftp.nic.ad.jp/jpirr/jpirr.db.gz | gunzip -c > /tmp/jpirr.db 2>/dev/null && pkill -s HUP `fake-rtrd`
+*/5 * * * * wget -q -O - ftp://ftp.nic.ad.jp/jpirr/jpirr.db.gz | gunzip -c > /tmp/jpirr.db 2>/dev/null
 
 % sudo fake-rtrd /tmp/jpirr.db
 ```
