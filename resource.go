@@ -78,6 +78,7 @@ func (rsrc *resource) loadAs(sn uint32) (*resource, error) {
 
 func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource, error) {
 	byObjects := regexp.MustCompile("\n\n")
+	maxLength := regexp.MustCompile(`\s*[Mm]axLength\s*(\d+)`)
 
 	if _, ok := rsrc.table[sn]; !ok {
 		rsrc.table[sn] = make(map[bgp.RouteFamily]*radix.Tree)
@@ -103,17 +104,26 @@ func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource,
 			}
 		}
 		switch object.Class {
-		case "route":
+		case "route", "route6":
+			findMaxLen := func() int {
+				vs, ok := object.Values[strings.ToLower("remarks")]
+				if ok {
+					for _, v := range vs {
+						result := maxLength.FindStringSubmatch(v)
+						if len(result) == 0 {
+							continue
+						}
+						num, _ := strconv.Atoi(result[1])
+						return num
+					}
+				}
+				return -1
+			}
 			rsrc, err = rsrc.addValidInfo(
 				sn,
 				object.Get("origin"),
-				object.Get("route"),
-			)
-		case "route6":
-			rsrc, err = rsrc.addValidInfo(
-				sn,
-				object.Get("origin"),
-				object.Get("route6"),
+				object.Get(object.Class),
+				findMaxLen(),
 			)
 		}
 		if err != nil {
@@ -123,7 +133,7 @@ func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource,
 	return rsrc, nil
 }
 
-func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string) (*resource, error) {
+func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFromObj int) (*resource, error) {
 	a, _ := strconv.ParseUint(strings.TrimLeft(as, "AS"), 10, 32)
 	rf, n, maxLen, err := parseCIDR(prefix)
 	if err != nil {
@@ -134,6 +144,9 @@ func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string) (*resour
 	prefixLen := uint8(m)
 	if !rsrc.useMaxLen {
 		maxLen = prefixLen
+	}
+	if mLenFromObj >= 0 && mLenFromObj <= int(maxLen) {
+		maxLen = uint8(mLenFromObj)
 	}
 
 	key := func() string {
