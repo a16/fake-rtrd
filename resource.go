@@ -133,6 +133,23 @@ func (rsrc *resource) loadFromIRRdb(sn uint32, irrDBFileName string) (*resource,
 	return rsrc, nil
 }
 
+func generateKey(rf bgp.RouteFamily, addr net.IP, prefixLen uint8) string {
+	var buf1 []byte
+	switch rf {
+	case bgp.RF_IPv4_UC:
+		buf1 = addr.To4()
+	case bgp.RF_IPv6_UC:
+		buf1 = addr.To16()
+	}
+	return func(buf2 []byte) string {
+		var buf3 bytes.Buffer
+		for i := 0; i < len(buf2) && i < int(prefixLen); i++ {
+			buf3.WriteString(fmt.Sprintf("%08b", buf2[i]))
+		}
+		return buf3.String()[:prefixLen]
+	}(buf1)
+}
+
 func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFromObj int) (*resource, error) {
 	a, _ := strconv.ParseUint(strings.TrimLeft(as, "AS"), 10, 32)
 	rf, n, maxLen, err := parseCIDR(prefix)
@@ -145,27 +162,20 @@ func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFrom
 	if !rsrc.useMaxLen {
 		maxLen = prefixLen
 	}
-	if mLenFromObj >= 0 && mLenFromObj <= int(maxLen) {
-		maxLen = uint8(mLenFromObj)
-	}
-
-	key := func() string {
-		var buf1 []byte
+	if mLenFromObj >= 0 {
 		switch rf {
 		case bgp.RF_IPv4_UC:
-			buf1 = addr.To4()
-		case bgp.RF_IPv6_UC:
-			buf1 = addr.To16()
-		}
-		return func(buf2 []byte) string {
-			var buf3 bytes.Buffer
-			for i := 0; i < len(buf2) && i < int(prefixLen); i++ {
-				buf3.WriteString(fmt.Sprintf("%08b", buf2[i]))
+			if mLenFromObj <= 32 {
+				maxLen = uint8(mLenFromObj)
 			}
-			return buf3.String()[:prefixLen]
-		}(buf1)
-	}()
+		case bgp.RF_IPv6_UC:
+			if mLenFromObj <= 128 {
+				maxLen = uint8(mLenFromObj)
+			}
+		}
+	}
 
+	key := generateKey(rf, addr, prefixLen)
 	b, _ := rsrc.table[sn][rf].Get(key)
 	if b == nil {
 		p := make([]byte, len(addr))
