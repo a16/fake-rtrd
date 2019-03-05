@@ -152,15 +152,12 @@ func generateKey(rf bgp.RouteFamily, addr net.IP, prefixLen uint8) string {
 
 func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFromObj int) (*resource, error) {
 	a, _ := strconv.ParseUint(strings.TrimLeft(as, "AS"), 10, 32)
-	rf, n, maxLen, err := parseCIDR(prefix)
+	rf, ip, maskLen, maxLen, err := parsePrefix(prefix)
 	if err != nil {
 		return nil, err
 	}
-	addr := n.IP
-	m, _ := n.Mask.Size()
-	prefixLen := uint8(m)
 	if !rsrc.useMaxLen {
-		maxLen = prefixLen
+		maxLen = maskLen
 	}
 	if mLenFromObj >= 0 {
 		switch rf {
@@ -175,11 +172,11 @@ func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFrom
 		}
 	}
 
-	key := generateKey(rf, addr, prefixLen)
+	key := generateKey(rf, ip, maskLen)
 	b, _ := rsrc.table[sn][rf].Get(key)
 	if b == nil {
-		p := make([]byte, len(addr))
-		copy(p, addr)
+		p := make([]byte, len(ip))
+		copy(p, ip)
 
 		r := &subResource{
 			asns:   []uint32{uint32(a)},
@@ -187,7 +184,7 @@ func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFrom
 		}
 
 		b := &prefixResource{
-			prefixLen: prefixLen,
+			prefixLen: maskLen,
 			prefix:    p,
 			values:    []*subResource{r},
 		}
@@ -215,21 +212,17 @@ func (rsrc *resource) addValidInfo(sn uint32, as string, prefix string, mLenFrom
 	return rsrc, nil
 }
 
-// Wrapper for net.ParseCIDR
-// net.ParseCIDR parses IPv4 mapped IP v6 address (eg. ::FFFF:0.0.0.0/96) as IPv4!
-// In this program(routing world), it should be parsed as IPv6.
-func parseCIDR(s string) (bgp.RouteFamily, *net.IPNet, uint8, error) {
+func parsePrefix(prefix string) (bgp.RouteFamily, net.IP, uint8, uint8, error) {
 	rf := bgp.RF_IPv6_UC
-	maxLen := uint8(net.IPv6len * 8)
-	ip, n, err := net.ParseCIDR(s)
+	maskLenMax := uint8(net.IPv6len * 8)
+	ip, n, err := net.ParseCIDR(prefix)
 	if err != nil {
-		return rf, nil, maxLen, err
+		return 0, nil, 0, 0, err
 	}
-	if !strings.Contains(s, ":") {
-		if ip.To4() != nil {
-			rf = bgp.RF_IPv4_UC
-			maxLen = uint8(net.IPv4len * 8)
-		}
+	if ip.To4() != nil {
+		rf = bgp.RF_IPv4_UC
+		maskLenMax = uint8(net.IPv4len * 8)
 	}
-	return rf, n, maxLen, nil
+  maskLen, _ := n.Mask.Size()
+	return rf, n.IP, uint8(maskLen), maskLenMax, nil
 }

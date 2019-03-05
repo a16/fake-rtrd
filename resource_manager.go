@@ -270,12 +270,10 @@ func treeToSet(table *radix.Tree) set.Set {
 
 func stringToValues(str string) (net.IP, uint8, uint8, uint32) {
 	arr := strings.Split(str, "-")
-	_, n, _, _ := parseCIDR(arr[0])
-	addr := n.IP
-	m, _ := n.Mask.Size()
+	_, ip, maskLen, _, _ := parsePrefix(arr[0])
 	maxLen, _ := strconv.ParseUint(arr[1], 10, 8)
 	asn, _ := strconv.ParseUint(arr[2], 10, 32)
-	return addr, uint8(m), uint8(maxLen), uint32(asn)
+	return ip, maskLen, uint8(maxLen), uint32(asn)
 }
 
 func (mgr *ResourceManager) run() {
