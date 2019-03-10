@@ -19,7 +19,7 @@ Usage:
 
 Application Options:
   -d, --debug     Show verbose debug information (default: false)
-  -i, --interval= Specify interval(1-59 min) for reloading pseudo ROA table (default: 5)
+  -i, --interval= Specify minutes for reloading pseudo ROA table with crontab style
   -p, --port=     Specify listen port for RTR (default: 323)
   -q, --quiet     Quiet mode (default: false)
 
@@ -47,7 +47,7 @@ Then type the following command to run fake-rtrd.
 % sudo fake-rtrd test.db
 ```
 
-By default, file is reloaded every 5 minutes. It'll send Serial Notify to clients when you updated it.
+By default, file has never been reloaded after started. If you want to reload it, Send HUP to it, or Use -i option. It'll send Serial Notify to clients when you updated it.
 
 If you want to load it from IRRd continuously, add commands like below and run ```fake-rtrd```
 
