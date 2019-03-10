@@ -21,6 +21,13 @@ import (
 	"github.com/robfig/cron"
 )
 
+func parseIntervalMinute(str string) error {
+	if _, err := cron.NewParser(cron.Minute).Parse(str); err != nil {
+		return err
+	}
+	return nil
+}
+
 func timeKeeper(ch chan<- bool, spec string) {
 	time.Sleep(time.Minute)
 	c := cron.New()

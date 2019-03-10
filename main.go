@@ -30,7 +30,7 @@ var version string
 
 var commandOpts struct {
 	Debug     bool   `short:"d" long:"debug" description:"Show verbose debug information"`
-	Interval  int    `short:"i" long:"interval" default:"5" description:"Specify interval(1-59 min) for reloading pseudo ROA table"`
+	Interval  string `short:"i" long:"interval" default:"" description:"Specify minutes for reloading pseudo ROA table. You can use crontab spec(eg. \"*/5\" and \"3,13,23,33,43,53\")"`
 	UseMaxLen bool   `short:"m" long:"maxlen" description:"Use 32 or 128 as MaxLen value, 32 for IPv4, 128 for IPv6. By default(=false), use the same length to the prefix length"`
 	Port      int    `short:"p" long:"port" default:"323" description:"Specify listen port for RTR"`
 	Quiet     bool   `short:"q" long:"quiet" description:"Quiet mode"`
@@ -53,7 +53,7 @@ func checkError(err error) {
 	}
 }
 
-func mainLoop(mgr *ResourceManager, args []string, port int, interval int, debug bool, quiet bool, sigCh chan os.Signal) {
+func mainLoop(mgr *ResourceManager, args []string, port int, interval string, debug bool, quiet bool, sigCh chan os.Signal) {
 	// Set log level
 	if quiet {
 		log.SetLevel(log.FatalLevel)
@@ -75,8 +75,10 @@ func mainLoop(mgr *ResourceManager, args []string, port int, interval int, debug
 
 	// cron for managing time
 	alarmCh := make(chan bool)
-	cronSpec := fmt.Sprintf("0 */%d * * * *", interval)
-	go timeKeeper(alarmCh, cronSpec)
+	if interval != "" {
+		cronSpec := fmt.Sprintf("0 %s * * * *", interval)
+		go timeKeeper(alarmCh, cronSpec)
+	}
 
 	for {
 		select {
@@ -121,16 +123,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	var interval int
-	if commandOpts.Interval >= 1 && commandOpts.Interval <= 59 {
-		interval = commandOpts.Interval
-	} else {
-		log.Errorf("interval value must be between 1 and 59.")
-		parser.WriteHelp(os.Stdout)
-		os.Exit(1)
+	if commandOpts.Interval != "" {
+		if err = parseIntervalMinute(commandOpts.Interval); err != nil {
+			parser.WriteHelp(os.Stdout)
+			os.Exit(1)
+		}
 	}
 
 	mgr := NewResourceManager(commandOpts.UseMaxLen)
-	mainLoop(mgr, args, commandOpts.Port, interval, commandOpts.Debug, commandOpts.Quiet, sigCh)
+	mainLoop(mgr, args, commandOpts.Port, commandOpts.Interval, commandOpts.Debug, commandOpts.Quiet, sigCh)
 	log.Infof("Daemon stopped")
 }

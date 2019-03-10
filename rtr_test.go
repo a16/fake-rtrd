@@ -24,7 +24,7 @@ func prepare(content []string) (*ResourceManager, *os.File) {
 	addRPSL(rpslFile, content)
 
 	mgr := NewResourceManager(false)
-	go mainLoop(mgr, []string{rpslFile.Name()}, 42420, 2, false, true, nil)
+	go mainLoop(mgr, []string{rpslFile.Name()}, 42420, "*/2", false, true, nil)
 	return mgr, rpslFile
 }
 
